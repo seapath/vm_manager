@@ -2,5 +2,19 @@
 org='rte'
 name='vm_manager'
 
+flavors='check sonar'
+
 [build]
 command='python3 setup.py install --prefix .'
+
+[sonar]
+command='/usr/bin/python-sonar.sh \
+        pacemaker_helper \
+        rbd_helper \
+        vm_manager'
+
+[check]
+command='pylint \
+        pacemaker_helper \
+        rbd_helper \
+        vm_manager'
