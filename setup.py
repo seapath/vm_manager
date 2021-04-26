@@ -13,4 +13,5 @@ setup(
     author_email="mathieu.dupre@savoirfairelinux.com",
     description="Managed VMs in Seapath cluster",
     include_package_data=True,
+    scripts=["vm_manager/helpers/libvirt_cmd.py"],
 )

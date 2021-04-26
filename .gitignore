@@ -8,6 +8,7 @@ __pycache__/
 /build/
 /dist/
 /lib/
+/bin/
 
 # Ignore IDE files
 /.idea/
