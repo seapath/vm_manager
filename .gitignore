@@ -1,0 +1,13 @@
+# Ignore python Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore python setup.py files
+/*.egg-info/
+/build/
+/dist/
+/lib/
+
+# Ignore IDE files
+/.idea/
