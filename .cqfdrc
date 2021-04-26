@@ -1,0 +1,6 @@
+[project]
+org='rte'
+name='vm_manager'
+
+[build]
+command='python3 setup.py install --prefix .'
