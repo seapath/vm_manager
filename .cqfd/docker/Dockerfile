@@ -18,3 +18,4 @@ RUN wget -O /tmp/sonar-scanner.zip "https://github.com/SonarSource/sonar-scanner
 RUN ln -s /opt/sonar-scanner-4.4.0.2170-linux /opt/sonar-scanner
 RUN echo 'sonar.host.url=http://j1.sfl.team:9000/' > /opt/sonar-scanner/conf/sonar-scanner.properties
 ADD python-sonar.sh /usr/bin/python-sonar.sh
+RUN python3 -m pip install black
