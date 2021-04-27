@@ -15,6 +15,10 @@ setup(
     include_package_data=True,
     scripts=[
         "vm_manager/helpers/libvirt_cmd.py",
+        "vm_manager/helpers/tests/pacemaker/add_vm.py",
+        "vm_manager/helpers/tests/pacemaker/remove_vm.py",
+        "vm_manager/helpers/tests/pacemaker/start_vm.py",
+        "vm_manager/helpers/tests/pacemaker/stop_vm.py",
         "vm_manager/helpers/tests/rbd_manager/clone_rbd.py",
         "vm_manager/helpers/tests/rbd_manager/create_rbd_group.py",
         "vm_manager/helpers/tests/rbd_manager/metadata_rbd.py",
