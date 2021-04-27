@@ -13,5 +13,14 @@ setup(
     author_email="mathieu.dupre@savoirfairelinux.com",
     description="Managed VMs in Seapath cluster",
     include_package_data=True,
-    scripts=["vm_manager/helpers/libvirt_cmd.py"],
+    scripts=[
+        "vm_manager/helpers/libvirt_cmd.py",
+        "vm_manager/helpers/tests/rbd_manager/clone_rbd.py",
+        "vm_manager/helpers/tests/rbd_manager/create_rbd_group.py",
+        "vm_manager/helpers/tests/rbd_manager/metadata_rbd.py",
+        "vm_manager/helpers/tests/rbd_manager/create_rbd_namespace.py",
+        "vm_manager/helpers/tests/rbd_manager/purge_rbd.py",
+        "vm_manager/helpers/tests/rbd_manager/rollback_rbd.py",
+        "vm_manager/helpers/tests/rbd_manager/write_rbd.py",
+    ],
 )
