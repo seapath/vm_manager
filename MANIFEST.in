@@ -1,0 +1,5 @@
+# Copyright (C) 2021, RTE (http://www.rte-france.com)
+# SPDX-License-Identifier: Apache-2.0
+
+include vm_manager/testdata/vm.xml
+include vm_manager/testdata/wrong_vm_config.xml
