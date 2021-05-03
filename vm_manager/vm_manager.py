@@ -30,7 +30,7 @@ def list_vms():
     List all the VM
     :return: the VM list
     """
-    return []
+    return Pacemaker.list_resources()
 
 
 def create(
@@ -229,6 +229,20 @@ def start(vm_name):
     :param vm_name: the VM to be started
     """
 
+    with Pacemaker(vm_name) as p:
+
+        if vm_name in p.list_resources():
+            state = p.show()
+            if state != "Started":
+                print("Start " + vm_name)
+                p.start()
+                p.wait_for("Started")
+                print("VM " + vm_name + " started")
+            else:
+                print("VM " + vm_name + " is already started")
+        else:
+            raise Exception("VM " + vm_name + " is not on the cluster")
+
 
 def is_enabled(vm_name):
     """
@@ -252,6 +266,20 @@ def stop(vm_name):
     Stop a VM
     :param vm_name: the VM to be stopped
     """
+
+    with Pacemaker(vm_name) as p:
+
+        if vm_name in p.list_resources():
+            state = p.show()
+            if state != "Stopped":
+                print("Stop " + vm_name)
+                p.stop()
+                p.wait_for("Stopped")
+                print("VM " + vm_name + " stopped")
+            else:
+                print("VM " + vm_name + " is already stopped")
+        else:
+            raise Exception("VM " + vm_name + " is not on the cluster")
 
 
 def pause(vm_name):
