@@ -26,5 +26,6 @@ setup(
         "vm_manager/helpers/tests/rbd_manager/purge_rbd.py",
         "vm_manager/helpers/tests/rbd_manager/rollback_rbd.py",
         "vm_manager/helpers/tests/rbd_manager/write_rbd.py",
+        "vm_manager/vm_manager_cmd.py",
     ],
 )
