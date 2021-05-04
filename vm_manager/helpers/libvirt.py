@@ -65,6 +65,14 @@ class LibVirtManager:
         """
         self._conn.defineXMLFlags(xml, libvirt.VIR_DOMAIN_DEFINE_VALIDATE)
 
+    def undefine(self, vm_name):
+        """
+        Remove a VM
+        :param vm_name: the VM to undefined
+        """
+        domain = self._conn.lookupByName(vm_name)
+        domain.undefine()
+
     @staticmethod
     def export_configuration(domain, xml_path):
         """
