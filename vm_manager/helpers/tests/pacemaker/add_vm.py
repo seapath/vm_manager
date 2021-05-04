@@ -11,7 +11,6 @@ import os
 from errno import ENOENT
 
 from vm_manager.helpers.pacemaker import Pacemaker
-from vm_manager.helpers.rbd_manager import RbdManager
 
 VM_NAME = "vm1"
 VM_XML = "/usr/share/testdata/vm.xml"
@@ -43,7 +42,7 @@ if __name__ == "__main__":
 
         resources = p.list_resources()
         print("Resource list: " + str(resources))
-        if not any(VM_NAME in r for r in resources):
+        if VM_NAME not in resources:
             raise Exception("Resource " + VM_NAME + " was not added")
 
         p.wait_for("Started")

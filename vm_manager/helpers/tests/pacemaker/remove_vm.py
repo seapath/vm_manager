@@ -34,5 +34,5 @@ if __name__ == "__main__":
 
         resources = p.list_resources()
         print("Resource list: " + str(resources))
-        if any(VM_NAME in r for r in resources):
+        if VM_NAME in resources:
             raise Exception("Resource " + VM_NAME + " was not removed")

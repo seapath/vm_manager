@@ -101,13 +101,17 @@ class Pacemaker:
         List node resources.
         """
         args = ["crm", "resource", "list"]
-        output = subprocess.run(args, check=True, capture_output=True)
+        output_cmd = subprocess.run(args, check=True, capture_output=True)
+        output = output_cmd.stdout.decode()
 
-        if "NO resources configured" in output.stdout.decode():
-            return []
+        resources = []
+        if "NO resources configured" in output:
+            return resources
 
-        output_list = str(output.stdout).split("\n")
-        return output_list
+        for line in output.split("\n"):
+            if line:
+                resources += [line.split("\t")[0].strip()]
+        return resources
 
     def delete(self, force=False):
         """
