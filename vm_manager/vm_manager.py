@@ -25,16 +25,21 @@ A module to manage VMs in Seapath cluster.
 """
 
 
-def list_vms():
+def list_vms(enabled=False):
     """
-    List all the VM
+    Return a list of the VMs.
+    :param enabled: if True only list enabled VMs, otherwise list all of them
     :return: the VM list
     """
-    return Pacemaker.list_resources()
+    if enabled:
+        return Pacemaker.list_resources()
+    else:
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            return rbd.list_groups()
 
 
 def create(
-    vm_name, xml, system_image, data_size=None, force=False, enable=False
+    vm_name, xml, system_image, data_size=None, force=False, enable=True
 ):
     """
     Create a new VM
@@ -57,12 +62,14 @@ def create(
             " special chars"
         )
 
-    logger.info("Create VM: " + vm_name + " from " + system_image)
-
     # Check required files exist
     for f in [CEPH_CONF, system_image]:
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
+
+    logger.info("Create VM: " + vm_name + " from " + system_image)
+
+    disk_name = "system_" + vm_name
 
     # Set name and uuid in xml
     xml_root = ET.fromstring(xml)
@@ -83,7 +90,6 @@ def create(
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_name = "system_" + vm_name
     disk_xml = ET.fromstring(
         """<disk type="network" device="disk">
             <driver name="qemu" type="raw" cache="writeback" />
@@ -115,51 +121,64 @@ def create(
         if not rbd.group_exists(vm_name):
             raise Exception("Could not create group " + vm_name)
 
-        disk_name = "system_" + vm_name
-        if rbd.image_exists(disk_name):
-            rbd.remove_image(disk_name)
+        try:
+            if rbd.image_exists(disk_name):
+                rbd.remove_image(disk_name)
 
-        logger.info("Image list :" + str(rbd.list_images()))
+            logger.info("Image list :" + str(rbd.list_images()))
 
-        # Import qcow2 disk
-        logger.info("Import qcow2 disk")
-        rbd.import_qcow2(system_image, disk_name)
+            # Import qcow2 disk
+            logger.info("Import qcow2 disk")
+            rbd.import_qcow2(system_image, disk_name)
 
-        if not rbd.image_exists(disk_name):
-            raise Exception("Could not import qcow2: " + system_image)
+            if not rbd.image_exists(disk_name):
+                raise Exception("Could not import qcow2: " + system_image)
 
-        # Add image to group
-        logger.info("Add " + disk_name + " to group " + vm_name)
-        rbd.add_image_to_group(disk_name, vm_name)
+            # Add image to group
+            logger.info("Add " + disk_name + " to group " + vm_name)
+            rbd.add_image_to_group(disk_name, vm_name)
 
-        # Write metadata
-        logger.info("Set metadata")
-        rbd.set_metadata(disk_name, "vm_name", vm_name)
-        rbd.set_metadata(disk_name, "xml", xml)
+            # Write metadata
+            logger.info("Set metadata")
+            rbd.set_metadata(disk_name, "vm_name", vm_name)
+            rbd.set_metadata(disk_name, "xml", xml)
+
+        except Exception as err:
+            remove_rbd(vm_name)
+            raise err
 
     logger.info("VM image " + disk_name + " created")
 
-    # Define and export configuration
-    xml_path = os.path.join(XML_PACEMAKER_PATH, vm_name + ".xml")
-    with LibVirtManager() as lvm:
-        logger.info("Define xml")
-        lvm.define(xml)
-        lvm.undefine(vm_name)
+    try:
+        # Define xml libvirt configuration
+        with LibVirtManager() as lvm:
+            logger.info("Define xml")
+            lvm.define(xml)
+            lvm.undefine(vm_name)
 
-    # Check libvirt xml configuration is correct
-    if not os.path.isfile(xml_path):
-        raise IOError(ENOENT, "Could not find file", xml_path)
+    except Exception as err:
+        remove_rbd(vm_name)
+        with LibVirtManager() as lvm:
+            if vm_name in lvm.list():
+                lvm.undefine(vm_name)
+        raise err
 
+    logger.info("xml libvirt defined")
+
+    # Add VM to Pacemaker cluster
     if enable:
-        # Add VM to cluster
-        with Pacemaker(vm_name) as p:
+        try:
+            enable_vm(vm_name)
 
-            p.add_vm(xml_path)
-            if vm_name not in p.list_resources():
-                raise Exception("Resource " + vm_name + " was not added")
-            p.wait_for("Started")
+        except Exception as err:
+            remove_rbd(vm_name)
+            with LibVirtManager() as lvm:
+                if vm_name in lvm.list():
+                    lvm.undefine(vm_name)
+            disable_vm(vm_name)
+            raise err
 
-        logger.info("VM " + vm_name + " added to cluster")
+    logger.info("VM " + vm_name + " created successfully")
 
 
 def remove(vm_name):
@@ -173,27 +192,24 @@ def remove(vm_name):
         if not rbd.group_exists(vm_name):
             raise Exception("VM " + vm_name + " does not exist")
 
-    with Pacemaker(vm_name) as p:
+    disable_vm(vm_name)
+    remove_rbd(vm_name)
 
-        if vm_name in p.list_resources():
-            if p.show() != "Stopped":
-                print("VM is running, force delete")
-                p.delete(True)
-            else:
-                print("VM is stopped, delete")
-                p.delete()
+    logger.info("VM " + vm_name + " removed")
 
-            if vm_name in p.list_resources():
-                raise Exception("Could not remove VM " + vm_name)
 
+def remove_rbd(vm_name):
+    """
+    Remove VM group and image from RBD cluster.
+    """
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
         disk_name = "system_" + vm_name
-        rbd.remove_group(vm_name)
+        if rbd.group_exists(vm_name):
+            rbd.remove_group(vm_name)
+
         if rbd.image_exists(disk_name):
             rbd.remove_image(disk_name)
-        else:
-            logger.info(disk_name + " image does not exist")
 
         if rbd.group_exists(vm_name):
             raise Exception("Could not remove group " + vm_name)
@@ -201,21 +217,57 @@ def remove(vm_name):
         if rbd.image_exists(disk_name):
             raise Exception("Could not remove image " + disk_name)
 
-    logger.info("VM " + vm_name + " removed")
+    logger.info("VM " + vm_name + " removed from RBD cluster")
 
 
-def enable(vm_name):
+def enable_vm(vm_name):
     """
     Enable a VM in Pacemaker
     :param vm_name: the VM name to be enabled
     """
 
+    with Pacemaker(vm_name) as p:
 
-def disable(vm_name):
+        if vm_name not in p.list_resources():
+            xml_path = os.path.join(XML_PACEMAKER_PATH, vm_name + ".xml")
+            p.add_vm(xml_path)
+
+            if vm_name not in p.list_resources():
+                raise Exception(
+                    "Could not add VM " + vm_name + " to the cluster"
+                )
+            p.wait_for("Started")
+
+        else:
+            logger.warning("VM " + vm_name + " is already on the cluster")
+
+    logger.info("VM " + vm_name + " enabled on the cluster")
+
+
+def disable_vm(vm_name):
     """
     Stop and disable a VM in Pacemaker without removing it
     :param vm_name: the VM name to be disabled
     """
+    with Pacemaker(vm_name) as p:
+
+        if vm_name in p.list_resources():
+            if p.show() != "Stopped":
+                logger.info("VM " + vm_name + " is running, force delete")
+                p.delete(True)
+            else:
+                logger.info("VM " + vm_name + " is stopped, delete")
+                p.delete()
+
+            if vm_name in p.list_resources():
+                raise Exception(
+                    "Could not remove VM " + vm_name + " from the cluster"
+                )
+
+        else:
+            logger.warning("VM " + vm_name + " is not on the cluster")
+
+    logger.info("VM " + vm_name + " disabled from the cluster")
 
 
 def start(vm_name):
@@ -230,12 +282,12 @@ def start(vm_name):
         if vm_name in p.list_resources():
             state = p.show()
             if state != "Started":
-                print("Start " + vm_name)
+                logger.info("Start " + vm_name)
                 p.start()
                 p.wait_for("Started")
-                print("VM " + vm_name + " started")
+                logger.info("VM " + vm_name + " started")
             else:
-                print("VM " + vm_name + " is already started")
+                logger.info("VM " + vm_name + " is already started")
         else:
             raise Exception("VM " + vm_name + " is not on the cluster")
 
@@ -246,15 +298,26 @@ def is_enabled(vm_name):
     :param vm_name: the vm_name to be checked
     :return: True if the VM is enabled, False otherwise
     """
+    return vm_name in Pacemaker.list_resources()
 
 
 def status(vm_name):
     """
     Get the VM status
     :param vm_name: the VM in which the status must be checked
-    :return: the status of the VM, among starting, started, pause, stopped and
-             disabled
+    :return: the status of the VM, among Starting, Started, Paused,
+             Stopped, Stopping, Disabled, Undefined and FAILED
+
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        if not rbd.group_exists(vm_name):
+            return "Undefined"
+
+    with Pacemaker(vm_name) as p:
+        if vm_name in p.list_resources():
+            return p.show()
+        else:
+            return "Disabled"
 
 
 def stop(vm_name):
@@ -268,12 +331,12 @@ def stop(vm_name):
         if vm_name in p.list_resources():
             state = p.show()
             if state != "Stopped":
-                print("Stop " + vm_name)
+                logger.info("Stop " + vm_name)
                 p.stop()
                 p.wait_for("Stopped")
-                print("VM " + vm_name + " stopped")
+                logger.info("VM " + vm_name + " stopped")
             else:
-                print("VM " + vm_name + " is already stopped")
+                logger.info("VM " + vm_name + " is already stopped")
         else:
             raise Exception("VM " + vm_name + " is not on the cluster")
 
