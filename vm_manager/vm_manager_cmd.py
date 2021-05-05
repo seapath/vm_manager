@@ -29,6 +29,7 @@ if __name__ == "__main__":
     subparsers.add_parser("disable", help="Disable a VM")
     subparsers.add_parser("enable", help="Enable a VM")
     subparsers.add_parser("list", help="List all VMs")
+    subparsers.add_parser("status", help="Print VM status")
     for name, subparser in subparsers.choices.items():
         if name != "list":
             subparser.add_argument(
@@ -85,3 +86,5 @@ if __name__ == "__main__":
         vm_manager.disable_vm(args.name)
     elif args.command == "enable":
         vm_manager.enable_vm(args.name)
+    elif args.command == "status":
+        print(vm_manager.status(args.name))
