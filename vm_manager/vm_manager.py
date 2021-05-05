@@ -144,11 +144,7 @@ def create(
     with LibVirtManager() as lvm:
         logger.info("Define xml")
         lvm.define(xml)
-        logger.info("Export configuration")
-        try:
-            lvm.export_configuration(vm_name, xml_path)
-        finally:
-            lvm.undefine(vm_name)
+        lvm.undefine(vm_name)
 
     # Check libvirt xml configuration is correct
     if not os.path.isfile(xml_path):
