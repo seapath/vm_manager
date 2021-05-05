@@ -23,9 +23,11 @@ if __name__ == "__main__":
         help="command", dest="command", required=True, metavar="command"
     )
     create_parser = subparsers.add_parser("create", help="Create a new VM")
-    remove_parser = subparsers.add_parser("remove", help="Remove a VM")
-    start_parser = subparsers.add_parser("start", help="Start a VM")
-    stop_parser = subparsers.add_parser("stop", help="Stop a VM")
+    subparsers.add_parser("remove", help="Remove a VM")
+    subparsers.add_parser("start", help="Start a VM")
+    subparsers.add_parser("stop", help="Stop a VM")
+    subparsers.add_parser("disable", help="Disable a VM")
+    subparsers.add_parser("enable", help="Enable a VM")
     subparsers.add_parser("list", help="List all VMs")
     for name, subparser in subparsers.choices.items():
         if name != "list":
@@ -41,6 +43,19 @@ if __name__ == "__main__":
     )
     create_parser.add_argument(
         "-i", "--image", type=str, required=True, help="VM image disk to import"
+    )
+    create_parser.add_argument(
+        "--disable",
+        action="store_true",
+        required=False,
+        help="Do not enable the VM after its creation",
+    )
+    create_parser.add_argument(
+        "--force",
+        action="store_true",
+        required=False,
+        help="Force the VM creation and overwrites existing VM with the same "
+        "name",
     )
     args = parser.parse_args()
     if args.verbose:
@@ -59,4 +74,14 @@ if __name__ == "__main__":
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             xml_data = xml.read()
-        vm_manager.create(args.name, xml_data, args.image)
+        vm_manager.create(
+            args.name,
+            xml_data,
+            args.image,
+            enable=(not args.disable),
+            force=args.force,
+        )
+    elif args.command == "disable":
+        vm_manager.disable_vm(args.name)
+    elif args.command == "enable":
+        vm_manager.enable_vm(args.name)
