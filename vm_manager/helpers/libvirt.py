@@ -71,7 +71,7 @@ class LibVirtManager:
         :param vm_name: the VM to undefined
         """
         domain = self._conn.lookupByName(vm_name)
-        domain.undefine()
+        domain.undefineFlags(libvirt.VIR_DOMAIN_UNDEFINE_NVRAM)
 
     @staticmethod
     def export_configuration(domain, xml_path):
