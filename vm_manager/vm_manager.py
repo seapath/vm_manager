@@ -18,6 +18,9 @@ CEPH_CONF = "/etc/ceph/ceph.conf"
 POOL_NAME = "rbd"
 NAMESPACE = ""
 
+RESERVED_NAMES = ["xml"]
+OS_DISK_PREFIX = "system_"
+
 logger = logging.getLogger(__name__)
 
 """
@@ -25,53 +28,49 @@ A module to manage VMs in Seapath cluster.
 """
 
 
-def list_vms(enabled=False):
+def _check_name(name):
     """
-    Return a list of the VMs.
-    :param enabled: if True only list enabled VMs, otherwise list all of them
-    :return: the VM list
+    Raise ValueError if name is an empty string, contains special
+    characters or is inside the RESERVED_NAMES list.
     """
-    if enabled:
-        return Pacemaker.list_resources()
-    else:
-        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-            return rbd.list_groups()
-
-
-def create(
-    vm_name, xml, system_image, data_size=None, force=False, enable=True
-):
-    """
-    Create a new VM
-    :param vm_name: the VM name
-    :param xml: the VM libvirt xml configuration
-    :param system_image: the path of the system image disk to use
-    :param data_size: the optional image data disk size. Used suffix K, M, or G
-    :param force: set to True to replace a existing VM with this new VM
-    :param enable: set to True to enable the VM in Pacemaker
-    """
-
-    # Check vm_name
-    if not (
-        vm_name
-        and isinstance(vm_name, str)
-        and bool(re.match("^[a-zA-Z0-9]*$", vm_name))
+    if name in RESERVED_NAMES:
+        raise ValueError("Parameter " + name + " is a reserved word")
+    if (
+        not name
+        or not isinstance(name, str)
+        or not bool(re.match("^[a-zA-Z0-9]*$", name))
     ):
-        raise ValueError(
-            "'vm_name' parameter must be a non-empty string without spaces and"
-            " special chars"
-        )
+        raise ValueError("Parameter must not contain spaces or special chars")
 
-    # Check required files exist
-    for f in [CEPH_CONF, system_image]:
-        if not os.path.isfile(f):
-            raise IOError(ENOENT, "Could not find file", f)
 
-    logger.info("Create VM: " + vm_name + " from " + system_image)
+def _create_vm_group(vm_name, force=False):
+    """
+    Create vm_name group and check its creation. Group can be
+    overwriten if force is set to True.
+    """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-    disk_name = "system_" + vm_name
+        # Check if VM already exists and overwrite it if force is enabled
+        if rbd.group_exists(vm_name):
+            if force:
+                remove(vm_name)
+            else:
+                raise Exception("VM " + vm_name + " already exists")
 
-    # Set name and uuid in xml
+        # Group creation
+        rbd.create_group(vm_name)
+        if not rbd.group_exists(vm_name):
+            raise Exception("Could not create group " + vm_name)
+
+    logger.info("VM group " + vm_name + " created successfully")
+
+
+def _create_xml(xml, vm_name):
+    """
+    Creates a libvirt configuration file according to xml and
+    disk_name parameters.
+    """
+    disk_name = OS_DISK_PREFIX + vm_name
     xml_root = ET.fromstring(xml)
     try:
         xml_root.remove(xml_root.findall("./name")[0])
@@ -105,77 +104,111 @@ def create(
         )
     )
     xml_root.find("devices").append(disk_xml)
-    xml = ET.tostring(xml_root).decode()
+    return ET.tostring(xml_root).decode()
+
+
+def _configure_vm(vm_name, base_xml, enable, metadata):
+    """
+    Configure VM vm_name: set initial metadata, define libvirt xml
+    configuration and add it on Pacemaker if enable is set to True.
+    """
+
+    xml = _create_xml(base_xml, vm_name)
+
+    # Add to group and set initial metadata
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        rbd.add_image_to_group(disk_name, vm_name)
+        logger.info("Image " + disk_name + " added to group " + vm_name)
+
+        rbd.set_image_metadata(disk_name, "vm_name", vm_name)
+        rbd.set_image_metadata(disk_name, "xml", xml)
+        rbd.set_image_metadata(disk_name, "_base_xml", base_xml)
+        for name, data in metadata.items():
+            rbd.set_image_metadata(disk_name, name, data)
+    logger.info("Image " + disk_name + " initial metadata set")
+
+    # Define libvirt xml configuration
+    with LibVirtManager() as lvm:
+        lvm.define(xml)
+        lvm.undefine(vm_name)
+    logger.info("libvirt xml config defined for VM " + vm_name)
+
+    # Enable on Pacemaker
+    if enable:
+        enable_vm(vm_name)
+
+
+def list_vms(enabled=False):
+    """
+    Return a list of the VMs.
+    :param enabled: if True only list enabled VMs, otherwise list all of them
+    :return: the VM list
+    """
+    if enabled:
+        return Pacemaker.list_resources()
+    else:
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            return rbd.list_groups()
+
+
+def create(
+    vm_name,
+    base_xml,
+    system_image,
+    data_size=None,
+    force=False,
+    enable=True,
+    metadata={},
+):
+    """
+    Create a new VM
+    :param vm_name: the VM name
+    :param xml: the VM libvirt xml configuration
+    :param system_image: the path of the system image disk to use
+    :param data_size: the optional image data disk size. Used suffix K, M, or G
+    :param force: set to True to replace a existing VM with this new VM
+    :param enable: set to True to enable the VM in Pacemaker
+    """
+
+    # Validate parameters and required files
+    _check_name(vm_name)
+
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata parameter must be a dictionary")
+
+    for name, value in metadata:
+        _check_name(name)
+
+    for f in [CEPH_CONF, system_image]:
+        if not os.path.isfile(f):
+            raise IOError(ENOENT, "Could not find file", f)
+
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata parameter must be a dictionary")
+
+    # Create VM group
+    _create_vm_group(vm_name, force)
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-        # Check if VM already exists and overwrite it if force is enabled
-        if rbd.group_exists(vm_name):
-            if force:
-                remove(vm_name)
-            else:
-                raise Exception("VM " + vm_name + " already exists")
-
-        # Group creation
-        rbd.create_group(vm_name)
-        if not rbd.group_exists(vm_name):
-            raise Exception("Could not create group " + vm_name)
-
         try:
+            # Overwrite image if necessary
+            disk_name = OS_DISK_PREFIX + vm_name
             if rbd.image_exists(disk_name):
                 rbd.remove_image(disk_name)
-
-            logger.info("Image list :" + str(rbd.list_images()))
 
             # Import qcow2 disk
             logger.info("Import qcow2 disk")
             rbd.import_qcow2(system_image, disk_name)
-
             if not rbd.image_exists(disk_name):
                 raise Exception("Could not import qcow2: " + system_image)
 
-            # Add image to group
-            logger.info("Add " + disk_name + " to group " + vm_name)
-            rbd.add_image_to_group(disk_name, vm_name)
-
-            # Write metadata
-            logger.info("Set metadata")
-            rbd.set_metadata(disk_name, "vm_name", vm_name)
-            rbd.set_metadata(disk_name, "xml", xml)
+            # Configure VM
+            _configure_vm(vm_name, base_xml, enable, metadata)
 
         except Exception as err:
-            remove_rbd(vm_name)
-            raise err
-
-    logger.info("VM image " + disk_name + " created")
-
-    try:
-        # Define xml libvirt configuration
-        with LibVirtManager() as lvm:
-            logger.info("Define xml")
-            lvm.define(xml)
-            lvm.undefine(vm_name)
-
-    except Exception as err:
-        remove_rbd(vm_name)
-        with LibVirtManager() as lvm:
-            if vm_name in lvm.list():
-                lvm.undefine(vm_name)
-        raise err
-
-    logger.info("xml libvirt defined")
-
-    # Add VM to Pacemaker cluster
-    if enable:
-        try:
-            enable_vm(vm_name)
-
-        except Exception as err:
-            remove_rbd(vm_name)
-            with LibVirtManager() as lvm:
-                if vm_name in lvm.list():
-                    lvm.undefine(vm_name)
-            disable_vm(vm_name)
+            remove(vm_name)
             raise err
 
     logger.info("VM " + vm_name + " created successfully")
@@ -188,23 +221,21 @@ def remove(vm_name):
     """
 
     # Check if VM exists
-    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-        if not rbd.group_exists(vm_name):
-            raise Exception("VM " + vm_name + " does not exist")
+    if vm_name not in list_vms():
+        raise Exception("VM " + vm_name + " does not exist")
 
+    # Disable from Pacemaker
     disable_vm(vm_name)
-    remove_rbd(vm_name)
 
-    logger.info("VM " + vm_name + " removed")
+    # Undefine configuration from libvirt
+    with LibVirtManager() as lvm:
+        if vm_name in lvm.list():
+            lvm.undefine(vm_name)
 
-
-def remove_rbd(vm_name):
-    """
-    Remove VM group and image from RBD cluster.
-    """
+    # Remove group and image from RBD cluster
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-        disk_name = "system_" + vm_name
+        disk_name = OS_DISK_PREFIX + vm_name
         if rbd.group_exists(vm_name):
             rbd.remove_group(vm_name)
 
@@ -217,7 +248,7 @@ def remove_rbd(vm_name):
         if rbd.image_exists(disk_name):
             raise Exception("Could not remove image " + disk_name)
 
-    logger.info("VM " + vm_name + " removed from RBD cluster")
+    logger.info("VM " + vm_name + " removed")
 
 
 def enable_vm(vm_name):
@@ -307,7 +338,6 @@ def status(vm_name):
     :param vm_name: the VM in which the status must be checked
     :return: the status of the VM, among Starting, Started, Paused,
              Stopped, Stopping, Disabled, Undefined and FAILED
-
     """
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         if not rbd.group_exists(vm_name):
@@ -325,7 +355,6 @@ def stop(vm_name):
     Stop a VM
     :param vm_name: the VM to be stopped
     """
-
     with Pacemaker(vm_name) as p:
 
         if vm_name in p.list_resources():
@@ -341,18 +370,19 @@ def stop(vm_name):
             raise Exception("VM " + vm_name + " is not on the cluster")
 
 
-def pause(vm_name):
-    """
-    Pause a VM
-    :param vm_name: the VM to be paused
-    """
-
-
-def clone(new_vm_name, src_vm, data="clone", force=False, enable=False):
+def clone(
+    src_vm_name,
+    dst_vm_name,
+    base_xml=None,
+    data="clone",
+    force=False,
+    enable=True,
+    metadata={},
+):
     """
     Create a new VM from another
-    :param new_vm_name: the New VM name
-    :param src_vm: the source VM to be cloned
+    :param src_vm_name: the source VM to be cloned
+    :param dst_vm_name: the new VM name
     :param data: the data disk. Can be "clone" to copy the source data disk,
                  None to disable data disk or a integer size with suffix K, M,
                  G to create a new empty data disk of the given size
@@ -360,8 +390,58 @@ def clone(new_vm_name, src_vm, data="clone", force=False, enable=False):
     :param enable: set to True to enable the VM in Pacemaker
     """
 
+    if src_vm_name == dst_vm_name:
+        raise ValueError(
+            "Source and destination images cannot have the same name "
+            + src_vm_name
+        )
 
-def snapshot_create(vm_name, snapshot_name, snapshot_type="OS"):
+    _check_name(dst_vm_name)
+
+    if not isinstance(metadata, dict):
+        raise ValueError("metadata parameter must be a dictionary")
+
+    for name, value in metadata:
+        _check_name(name)
+
+    src_disk = OS_DISK_PREFIX + src_vm_name
+    dst_disk = OS_DISK_PREFIX + dst_vm_name
+
+    if not base_xml:
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            base_xml = rbd.get_image_metadata(src_disk, "_base_xml")
+            if not base_xml:
+                raise Exception("Could not find xml libvirt configuration")
+
+    _create_vm_group(dst_vm_name, force)
+
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        try:
+            # Overwrite image if necessary
+            if rbd.image_exists(dst_disk):
+                rbd.remove_image(dst_disk)
+
+            # Note: Only deep-copy works for images that are on a group
+            # (destiantion img will keep the snaps but not the group)
+            rbd.copy_image(src_disk, dst_disk, overwrite=force, deep=True)
+            if not rbd.image_exists(dst_disk):
+                raise Exception("Could not create image disk " + dst_disk)
+
+            # Configure VM
+            _configure_vm(dst_vm_name, base_xml, enable, metadata)
+
+        except Exception as err:
+            remove(dst_vm_name)
+            if not rbd.is_image_in_group(src_disk, src_vm_name):
+                rbd.add_image_to_group(src_disk, src_vm_name)
+            raise err
+
+    logger.info(
+        "VM " + src_vm_name + " successfully cloned into " + dst_vm_name
+    )
+
+
+def snapshot_create(vm_name, snapshot_name="", snapshot_type="OS"):
     """
     Create a snapshot. The snapshot can be a system disk snapshot only or
     a VM snapshot (os disk and data disk)
@@ -382,7 +462,7 @@ def snapshot_remove(vm_name, snapshot_name, snapshot_type="OS"):
     """
 
 
-def snapshots_list(vm_name, snapshot_type="OS"):
+def snapshot_list(vm_name, snapshot_type="OS"):
     """
     Get the snapshots list of a VM
     :param vm_name: the VM name from which to list the snapshots

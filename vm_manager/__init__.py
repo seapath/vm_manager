@@ -5,6 +5,7 @@ from vm_manager.vm_manager import (
     start,
     stop,
     create,
+    clone,
     remove,
     enable_vm,
     disable_vm,
