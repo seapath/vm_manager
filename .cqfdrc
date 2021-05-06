@@ -2,7 +2,7 @@
 org='rte'
 name='vm_manager'
 
-flavors='check sonar check_format format'
+flavors='check sonar check_format format flake'
 
 [build]
 command='python3 setup.py install --prefix .'
@@ -24,3 +24,6 @@ command='black -l 79 -t py38 --check .'
 
 [format]
 command='black -l 79 -t py38 .'
+
+[flake]
+command='flake8'

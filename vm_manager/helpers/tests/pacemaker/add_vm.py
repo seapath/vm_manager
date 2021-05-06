@@ -7,9 +7,6 @@ Script to test Pacemaker module: import a qcow2 image and add VM to
 cluster
 """
 
-import os
-from errno import ENOENT
-
 from vm_manager.helpers.pacemaker import Pacemaker
 
 VM_NAME = "vm1"
