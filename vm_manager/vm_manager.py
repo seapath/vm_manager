@@ -396,8 +396,8 @@ def snapshot_purge(vm_name, snapshot_type="OS"):
     """
     Remove all snapshots of the given type on the given VM
     :param vm_name: the VM name to be purged
-    :param snapshot_type: the snapshot type to purge: "OS" for a system snapshot
-                          or "VM" for VM snapshot
+    :param snapshot_type: the snapshot type to purge: "OS" for a system
+                          snapshot or "VM" for VM snapshot
     """
 
 

@@ -20,7 +20,7 @@ command='pylint \
         vm_manager'
 
 [check_format]
-command='black -l 80 -t py38 --check .'
+command='black -l 79 -t py38 --check .'
 
 [format]
-command='black -l 80 -t py38 .'
+command='black -l 79 -t py38 .'

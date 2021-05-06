@@ -43,7 +43,11 @@ if __name__ == "__main__":
         "--xml", type=str, required=True, help="VM libvirt XML path"
     )
     create_parser.add_argument(
-        "-i", "--image", type=str, required=True, help="VM image disk to import"
+        "-i",
+        "--image",
+        type=str,
+        required=True,
+        help="VM image disk to import",
     )
     create_parser.add_argument(
         "--disable",

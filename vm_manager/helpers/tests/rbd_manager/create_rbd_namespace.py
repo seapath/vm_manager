@@ -111,7 +111,9 @@ if __name__ == "__main__":
 
             for ns in [NS1, NS2]:
                 if ns in img_list:
-                    raise Exception("Namespace " + ns + " could not be removed")
+                    raise Exception(
+                        "Namespace " + ns + " could not be removed"
+                    )
 
             print("Test finished")
 
