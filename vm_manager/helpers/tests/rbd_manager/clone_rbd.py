@@ -14,6 +14,8 @@ POOL_NAME = "rbd"
 IMG_SIZE = "4M"
 IMG1 = "img1"
 IMG2 = "img2"
+IMG3 = "img3"
+SNAP = "snap"
 TEXT = "Hello world"
 
 if __name__ == "__main__":
@@ -34,7 +36,7 @@ if __name__ == "__main__":
             print("Write text to image " + IMG1)
             rbd.write_to_image(IMG1, bytes(TEXT, "utf-8"), 0)
 
-            # Verify
+            # Verify data
             data = rbd.read_from_image(IMG1, 0, len(TEXT))
             print("Read from image " + IMG1 + ": " + str(data))
 
@@ -43,9 +45,32 @@ if __name__ == "__main__":
                     "Data read from " + IMG1 + " is not correct: " + str(data)
                 )
 
+            # Create image snapshot
+            print("Create image snapshot to clone")
+            rbd.create_image_snapshot(IMG1, SNAP)
+
+            # Verify snapshot
+            print(
+                "Image "
+                + IMG1
+                + " snapshot list: "
+                + str(rbd.list_image_snapshots(IMG1))
+            )
+            if not rbd.image_snapshot_exists(IMG1, SNAP):
+                raise Exception(
+                    "Could not create snapshot " + SNAP + " from image " + IMG1
+                )
+
             # Clone image
-            print("Clone image " + IMG1 + " into " + IMG2)
-            rbd.clone_image(IMG1, IMG2)
+            print(
+                "Clone image "
+                + IMG1
+                + " into "
+                + IMG2
+                + " from snapshot "
+                + SNAP
+            )
+            rbd.clone_image(IMG1, IMG2, SNAP)
 
             # Verify
             data = rbd.read_from_image(IMG2, 0, len(TEXT))
@@ -56,15 +81,33 @@ if __name__ == "__main__":
                     "Data read from " + IMG2 + " is not correct: " + str(data)
                 )
 
+            # Copy image
+            print("Copy image " + IMG1 + " into " + IMG3)
+            rbd.copy_image(IMG1, IMG3)
+
+            # Verify image has been copied
+            print("Image list: " + str(rbd.list_images()))
+            if not rbd.image_exists(IMG3):
+                raise Exception("Image has not been copied")
+
+            # Verify data
+            data = rbd.read_from_image(IMG3, 0, len(TEXT))
+            print("Read from image " + IMG3 + ": " + str(data))
+
+            if data.decode() != TEXT:
+                raise Exception(
+                    "Data read from " + IMG3 + " is not correct: " + str(data)
+                )
+
             # Remove images
             print("Remove images " + IMG1 + " and " + IMG2)
-            rbd.remove_image(IMG1)
             rbd.remove_image(IMG2)
+            rbd.remove_image(IMG1)
+            rbd.remove_image(IMG3)
 
-            img_list = rbd.list_images()
-            print("Image list: " + str(img_list))
-            for img in [IMG1, IMG2]:
-                if img in img_list:
+            print("Image list: " + str(rbd.list_images()))
+            for img in [IMG1, IMG2, IMG3]:
+                if rbd.image_exists(img):
                     raise Exception("Could not remove image " + img)
 
             print("Test finished")

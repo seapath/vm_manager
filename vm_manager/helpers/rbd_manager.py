@@ -28,7 +28,7 @@ class RbdManager:
     """
 
     def __init__(
-        self, ceph_conf="/etc/ceph/ceph.conf", pool="rbd", namespace="vm"
+        self, ceph_conf="/etc/ceph/ceph.conf", pool="rbd", namespace=""
     ):
         """
         Class constructor.
@@ -154,7 +154,6 @@ class RbdManager:
 
         self._rbd_inst.create(self._ioctx, img, size)
         logger.info("Created image " + img + " of size " + str(size))
-        return Image(self._ioctx, img)
 
     def remove_image(self, img):
         """
@@ -169,44 +168,84 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def clone_image(self, old_img, new_img, overwrite=True):
+    def clone_image(self, src_img, dst_img, snap, overwrite=True):
         """
-        Clone an image from a temporary snapshot.
+        Clone image src_img to dst_img from a snapshot snap.
         """
-        if self.image_exists(new_img):
-            if overwrite:
-                self.remove_image(new_img)
-            else:
-                raise RbdException("Image " + new_img + " already exists")
-
-        try:
-            img_inst = self._get_image(old_img)
-            img_inst.create_snap("tmp_snap")
-            img_inst.protect_snap("tmp_snap")
-
-            self._rbd_inst.clone(
-                self._ioctx, old_img, "tmp_snap", self._ioctx, new_img
+        if src_img == dst_img:
+            raise ValueError(
+                "Source and destination images cannot have the same name "
+                + src_img
             )
 
-            new_img_inst = Image(self._ioctx, new_img)
+        if not self.image_exists(src_img):
+            raise ValueError("Source image " + src_img + " does not exist")
 
-            # deep flatten feature does not seem to work, raising
-            # errno 16: error unprotecting snapshot
-            new_img_inst.flatten()
+        if not self.image_snapshot_exists(src_img, snap):
+            raise ValueError("Snapshot " + snap + " does not exist")
 
-            img_inst.unprotect_snap("tmp_snap")
-            img_inst.remove_snap("tmp_snap")
+        if self.image_exists(dst_img):
+            if overwrite:
+                self.remove_image(dst_img)
+            else:
+                raise RbdException(
+                    "Destination image " + dst_img + " already exists"
+                )
+
+        img_inst = self._get_image(src_img)
+        try:
+            img_inst.protect_snap(snap)
+            self._rbd_inst.clone(
+                self._ioctx, src_img, snap, self._ioctx, dst_img
+            )
+            logger.info(
+                "Image " + src_img + " has been cloned into " + dst_img
+            )
+        finally:
             img_inst.close()
 
-            logger.info("Cloned image " + old_img + " into " + new_img)
-            return new_img_inst
+    def copy_image(self, src_img, dst_img, overwrite=True, deep=True):
+        """
+        Create an RBD image copy from src_img named dst_img.
+        """
+        logger.info("copy " + src_img + " into " + dst_img)
+        if src_img == dst_img:
+            raise ValueError(
+                "Source and destination images cannot have the same name "
+                + src_img
+            )
+        if not self.image_exists(src_img):
+            raise ValueError("Source image " + src_img + " does not exist")
+
+        if self.image_exists(dst_img):
+            if overwrite:
+                self.remove_image(dst_img)
+            else:
+                raise RbdException(
+                    "Destination image " + dst_img + " already exists"
+                )
+        img_inst = self._get_image(src_img)
+        try:
+            if deep:
+                img_inst.deep_copy(self._ioctx, dst_img)
+                logger.info(
+                    "Image " + src_img + " has been copied into " + dst_img
+                )
+            else:
+                img_inst.copy(self._ioctx, dst_img)
+                logger.info(
+                    "Image "
+                    + src_img
+                    + " has been deep-copied into "
+                    + dst_img
+                )
 
         finally:
             img_inst.close()
 
-    def rollback_image_to_snap(self, img, snap):
+    def rollback_image(self, img, snap):
         """
-        Rollback image to state snapshot.
+        Rollback image to snapshot.
         """
         try:
             img_inst = self._get_image(img)
@@ -231,18 +270,8 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def get_image_group(self, img):
-        """
-        Returns image group.
-        """
-        img_inst = self._get_image(img)
-        try:
-            return img_inst.group()["name"]
-        finally:
-            img_inst.close()
-
     # Snapshots related methods
-    def list_snapshots(self, img):
+    def list_image_snapshots(self, img):
         """
         Return a list of all snapshots from an image.
         """
@@ -252,7 +281,13 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def create_snapshot(self, img, snap):
+    def image_snapshot_exists(self, img, snap):
+        """
+        Check if snapshot exists on image.
+        """
+        return snap in self.list_image_snapshots(img)
+
+    def create_image_snapshot(self, img, snap):
         """
         Create snapshot snap from an image img.
         """
@@ -263,7 +298,7 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def remove_snapshot(self, img, snap):
+    def remove_image_snapshot(self, img, snap):
         """
         Remove all snapshots for a given image
         """
@@ -276,7 +311,7 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def set_snapshot_protected(self, img, snap, protect):
+    def set_image_snapshot_protected(self, img, snap, protect):
         """
         Set protected state for an image snapshot.
         """
@@ -298,7 +333,7 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def is_snapshot_protected(self, img, snap):
+    def is_image_snapshot_protected(self, img, snap):
         """
         Check if an image snapshot is protected.
         """
@@ -405,6 +440,54 @@ class RbdManager:
         logger.info("Remove group " + group)
         self._rbd_inst.group_remove(self._ioctx, group)
 
+    def rollback_group(self, group, snap):
+        """
+        Rollback group to state snapshot.
+        """
+        group_inst = self._get_group(group)
+        group_inst.rollback_to_snap(snap)
+        logger.info("Group " + group + " rollbacked to snap " + snap)
+
+    def purge_group(self, group):
+        """
+        Remove all snapshots from group.
+        """
+        group_inst = self._get_group(group)
+        for snap in self.list_group_snapshots(group):
+            group_inst.remove_snap(snap)
+        logger.info("Group " + group + " purged")
+
+    # Group snapshot methods
+    def list_group_snapshots(self, group):
+        """
+        List snapshots of a group.
+        """
+        group_inst = self._get_group(group)
+        return [x["name"] for x in group_inst.list_snaps()]
+
+    def group_snapshot_exists(self, group, snap):
+        """
+        Checks if a snapshot exists in a group.
+        """
+        return snap in self.list_group_snapshots(group)
+
+    def create_group_snapshot(self, group, snap):
+        """
+        Create a snapshot snap from group.
+        """
+        group_inst = self._get_group(group)
+        group_inst.create_snap(snap)
+        logger.info("Group " + group + " snapshot " + snap + " created")
+
+    def remove_group_snapshot(self, group, snap):
+        """
+        Remove snapshot snap from group.
+        """
+        group_inst = self._get_group(group)
+        group_inst.remove_snap(snap)
+        logger.info("Group " + group + " snapshot " + snap + " removed")
+
+    # Image - group methods
     def list_group_images(self, group):
         """
         Return the list of all the images from the group.
@@ -412,12 +495,21 @@ class RbdManager:
         group_inst = self._get_group(group)
         return [x["name"] for x in group_inst.list_images()]
 
-    def rollback_group_to_snap(self, group, snap):
+    def get_image_group(self, img):
         """
-        Rollback group to state snapshot.
+        Returns image group.
         """
-        group_inst = self._get_group(group)
-        return group_inst.rollback_to_snap(snap)
+        img_inst = self._get_image(img)
+        try:
+            return img_inst.group()["name"]
+        finally:
+            img_inst.close()
+
+    def is_image_in_group(self, img, group):
+        """
+        Checks if image img is in group.
+        """
+        return self.get_image_group(img) == group
 
     def add_image_to_group(self, img, group):
         """
@@ -434,18 +526,12 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def image_in_group(self, img, group):
-        """
-        Checks if image img is in group.
-        """
-        return self.get_image_group(img) == group
-
     def remove_image_from_group(self, img, group):
         """
         Remove image from group.
         """
         group_inst = self._get_group(group)
-        if self.image_in_group(img, group):
+        if self.is_image_in_group(img, group):
             group_inst.remove_image(self._ioctx, img)
         else:
             raise RbdException("Image " + img + " is not in group " + group)
