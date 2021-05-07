@@ -31,6 +31,7 @@ if __name__ == "__main__":
                 STOP_TIMEOUT,
                 MONITOR_TIMEOUT,
                 MONITOR_INTERVAL,
+                seapath_managed=False,
             )
         except Exception as err:
             raise Exception(
