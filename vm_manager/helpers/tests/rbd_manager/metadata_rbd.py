@@ -14,10 +14,10 @@ POOL_NAME = "rbd"
 IMG_SIZE = "4M"
 IMG_NAME = "img1"
 METADATA = {
-    "vm1": "metadatatest1",
-    "vm2": "metadatatest2",
-    "vm3": "metadatatest3",
-    "vm4": "metadatatest4",
+    "test1": "metadatatest1",
+    "test2": "metadatatest2",
+    "test3": "metadatatest3",
+    "test4": "metadatatest4",
 }
 
 if __name__ == "__main__":
@@ -37,18 +37,18 @@ if __name__ == "__main__":
             # Set metadata
             print("Set metadata: " + str(METADATA))
             for md in METADATA:
-                rbd.set_metadata(IMG_NAME, md, METADATA[md])
+                rbd.set_image_metadata(IMG_NAME, md, METADATA[md])
 
             # Read metadata
             print(
                 "List all metadata from "
                 + IMG_NAME
                 + ": "
-                + str(dict(rbd.list_metadata(IMG_NAME)))
+                + str(rbd.list_image_metadata(IMG_NAME))
             )
 
             for md in METADATA:
-                metadata = rbd.get_metadata(IMG_NAME, md)
+                metadata = rbd.get_image_metadata(IMG_NAME, md)
                 print("Read metadata " + md + ": " + str(metadata))
                 if metadata != METADATA[md]:
                     raise Exception("Could not verify " + md)

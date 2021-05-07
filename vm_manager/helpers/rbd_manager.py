@@ -48,7 +48,7 @@ class RbdManager:
             self._ioctx = self._cluster.open_ioctx(self._pool)
             self.set_namespace(self._namespace)
             logger.info("Module has been successfully initialized")
-        except Exception as err:
+        except RbdException as err:
             logger.warning("Init not successful: " + str(err))
             raise err
 
@@ -95,7 +95,7 @@ class RbdManager:
         is the current namespace.
         """
         if self.get_namespace() == ns:
-            raise Exception("Could not delete the current set namespace")
+            raise RbdException("Could not delete the current set namespace")
         self._rbd_inst.namespace_remove(self._ioctx, ns)
 
     def set_namespace(self, ns):
@@ -329,20 +329,21 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    # Metadata access methods
-    def list_metadata(self, img):
+    # Image metadata access methods
+    def list_image_metadata(self, img):
         """
         List all metadata from image.
         """
         img_inst = self._get_image(img)
         try:
-            return img_inst.metadata_list()
+            return list(dict(img_inst.metadata_list()).keys())
         finally:
             img_inst.close()
 
-    def set_metadata(self, img, key, value):
+    def set_image_metadata(self, img, key, value):
         """
-        Set (key, value) to image metadata.
+        Add metadata (key, value) to image img. Use check to ensure 'key'
+        is not reserved or contains special charactes.
         """
         img_inst = self._get_image(img)
         try:
@@ -353,7 +354,7 @@ class RbdManager:
         finally:
             img_inst.close()
 
-    def get_metadata(self, img, key):
+    def get_image_metadata(self, img, key):
         """
         Return a dictionary with the metadata from image.
         """
@@ -382,7 +383,7 @@ class RbdManager:
         """
         group_inst = Group(self._ioctx, group)
         if group_inst is None:
-            raise Exception("Could not find group " + group)
+            raise RbdException("Could not find group " + group)
         else:
             return group_inst
 
@@ -391,7 +392,7 @@ class RbdManager:
         Create group and add image inside.
         """
         if self.group_exists(group):
-            raise Exception("Group already exists")
+            raise RbdException("Group already exists")
 
         self._rbd_inst.group_create(self._ioctx, group)
         logger.info("Created group " + group)
@@ -429,7 +430,7 @@ class RbdManager:
                 group_inst.add_image(self._ioctx, img)
                 logger.info("Image " + img + " added to group " + group)
             else:
-                raise Exception("Group does not exist")
+                raise RbdException("Group does not exist")
         finally:
             img_inst.close()
 
@@ -447,7 +448,7 @@ class RbdManager:
         if self.image_in_group(img, group):
             group_inst.remove_image(self._ioctx, img)
         else:
-            raise Exception("Image " + img + " is not in group " + group)
+            raise RbdException("Image " + img + " is not in group " + group)
 
     # Image import methods
     def import_qcow2(self, src, dest):
