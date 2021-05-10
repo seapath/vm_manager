@@ -566,6 +566,9 @@ def list_metadata(vm_name):
     :param vm_name: the VM name from which the metadata will be listed
     :return: the metadata list
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        return rbd.list_image_metadata(disk_name)
 
 
 def get_metadata(vm_name, metadata_name):
@@ -575,6 +578,9 @@ def get_metadata(vm_name, metadata_name):
     :param metadata_name: the metadata name to get
     :return: the metadata value (a str)
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        return rbd.get_image_metadata(disk_name, metadata_name)
 
 
 def set_metadata(vm_name, metadata_name, metadata_value):
@@ -585,3 +591,18 @@ def set_metadata(vm_name, metadata_name, metadata_value):
     :param metadata_name: the metadata name to be set
     :param metadata_value: the metadata value to set
     """
+
+    _check_name(metadata_name)
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        rbd.set_image_metadata(disk_name, metadata_name, metadata_value)
+
+    logger.info(
+        "Image "
+        + disk_name
+        + " metadata set: ("
+        + metadata_name
+        + ":"
+        + metadata_value
+        + ")"
+    )
