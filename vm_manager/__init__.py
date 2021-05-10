@@ -11,4 +11,9 @@ from vm_manager.vm_manager import (
     disable_vm,
     is_enabled,
     status,
+    create_snapshot,
+    remove_snapshot,
+    list_snapshots,
+    purge_image,
+    rollback_snapshot,
 )

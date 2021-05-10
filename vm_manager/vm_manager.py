@@ -441,55 +441,123 @@ def clone(
     )
 
 
-def snapshot_create(vm_name, snapshot_name="", snapshot_type="OS"):
+def create_snapshot(vm_name, snapshot_name="", snapshot_type="OS"):
     """
     Create a snapshot. The snapshot can be a system disk snapshot only or
-    a VM snapshot (os disk and data disk)
+    a VM snapshot (os disk and data disk).
     :param vm_name: the VM to be snapshot
     :param snapshot_name: the snapshot name
     :parameter snapshot_type: the snapshot type to perform: "OS" for a system
                               snapshot or "VM" for VM snapshot
     """
 
+    _check_name(snapshot_name)
 
-def snapshot_remove(vm_name, snapshot_name, snapshot_type="OS"):
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+        if snapshot_type == "OS":
+            disk_name = OS_DISK_PREFIX + vm_name
+            if rbd.image_snapshot_exists(disk_name, snapshot_name):
+                raise Exception(
+                    "Snapshot "
+                    + snapshot_name
+                    + " already exists on image "
+                    + disk_name
+                )
+            rbd.create_image_snapshot(disk_name, snapshot_name)
+            logger.info(
+                "Snapshot "
+                + snapshot_name
+                + " from image "
+                + disk_name
+                + " successfully created"
+            )
+
+        else:
+            logger.warning("Unknown snapshot type: " + snapshot_type)
+
+
+def remove_snapshot(vm_name, snapshot_name, snapshot_type="OS"):
     """
     Remove a snapshot
-    :param vm_name: the VM in which the snapshot must be removed
+    :param vm_name: the VM from which the snapshot must be removed
     :param snapshot_name: the name of the snapshot to be removed
     :param snapshot_type: the snapshot type: "OS" for a system snapshot or
                           "VM" for VM snapshot
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        if snapshot_type == "OS":
+            disk_name = OS_DISK_PREFIX + vm_name
+            rbd.remove_image_snapshot(disk_name, snapshot_name)
+            logger.info(
+                "Snapshot "
+                + snapshot_name
+                + " from image "
+                + disk_name
+                + " successfully removed"
+            )
+
+        else:
+            logger.warning("Unknown snapshot type: " + snapshot_type)
 
 
-def snapshot_list(vm_name, snapshot_type="OS"):
+def list_snapshots(vm_name, snapshot_type="OS"):
     """
-    Get the snapshots list of a VM
+    Get the snapshot list of a VM.
     :param vm_name: the VM name from which to list the snapshots
     :param snapshot_type: the snapshot type to list: "OS" for a system snapshot
                           or "VM" for VM snapshot
     :return: the snapshot list
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        if snapshot_type == "OS":
+            disk_name = OS_DISK_PREFIX + vm_name
+            return rbd.list_image_snapshots(disk_name)
+        else:
+            logger.warning("Unknown snapshot type: " + snapshot_type)
 
 
-def snapshot_purge(vm_name, snapshot_type="OS"):
+def purge_image(vm_name, snapshot_type="OS"):
     """
-    Remove all snapshots of the given type on the given VM
+    Remove all snapshots of the given type on the given VM.
     :param vm_name: the VM name to be purged
     :param snapshot_type: the snapshot type to purge: "OS" for a system
                           snapshot or "VM" for VM snapshot
     """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+        if snapshot_type == "OS":
+            disk_name = OS_DISK_PREFIX + vm_name
+            rbd.purge_image(disk_name)
+            logger.info("Image " + disk_name + " successfully purged")
+        else:
+            logger.warning("Unknown snapshot type: " + snapshot_type)
 
 
-def snapshot_rollback(vm_name, snapshot_name, snapshot_type="OS"):
+def rollback_snapshot(vm_name, snapshot_name, snapshot_type="OS"):
     """
-    Restore a VM to a previous state based on the given snapshot
+    Restore a VM to a previous state based on the given snapshot.
     :param vm_name: the VM name to be restored
     :param snapshot_name: the snapshot name to be used for rollback
     :param snapshot_type: the snapshot type used for the rollback: "OS" for a
                           system snapshot or "VM" for VM snapshot. A VM
                           rollback will rollback the system and the data
     """
+    enabled = is_enabled(vm_name)
+
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+        if snapshot_type == "OS":
+            disk_name = OS_DISK_PREFIX + vm_name
+            if enabled:
+                disable_vm(vm_name)
+            rbd.rollback_image(disk_name, snapshot_name)
+
+        else:
+            logger.warning("Unknown snapshot type: " + snapshot_type)
+
+    if enabled:
+        enable_vm(vm_name)
 
 
 def list_metadata(vm_name):
