@@ -7,6 +7,8 @@ Script to test RbdManager module: rollback RBD image to a specific
 image snapshot and group snapshot
 """
 
+import time
+
 from vm_manager.helpers.rbd_manager import RbdManager
 
 CEPH_CONF = "/etc/ceph/ceph.conf"
@@ -78,6 +80,16 @@ if __name__ == "__main__":
             print("Snaps from " + IMG_NAME + ": " + str(snap_list))
             if SNAP not in snap_list:
                 raise Exception("Could not create snapshot " + SNAP)
+
+            # Check snapshot timestamp
+            ts = rbd.get_image_snapshot_timestamp(IMG_NAME, SNAP)
+            print("Snapshot " + SNAP + " timestamp: " + str(ts))
+            if (
+                int(ts.timestamp()) > int(time.time()) + 5
+            ):  # Compare with 5 sec delay
+                raise Exception(
+                    "Incorrect snapshot " + SNAP + " timestamp: " + str(ts)
+                )
 
             # Overwrite data on image
             write_to_image(rbd, IMG_NAME, TEXT2)

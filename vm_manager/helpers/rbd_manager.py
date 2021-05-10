@@ -311,6 +311,19 @@ class RbdManager:
         finally:
             img_inst.close()
 
+    def get_image_snapshot_timestamp(self, img, snap):
+        """
+        Returns timestamp for a given image snapshot.
+        """
+        img_inst = self._get_image(img)
+        try:
+            for s in img_inst.list_snaps():
+                if s["name"] == snap:
+                    return img_inst.get_snap_timestamp(s["id"])
+            raise RbdException("Snapshot " + snap + " not found")
+        finally:
+            img_inst.close()
+
     def set_image_snapshot_protected(self, img, snap, protect):
         """
         Set protected state for an image snapshot.
