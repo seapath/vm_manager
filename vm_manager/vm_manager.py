@@ -5,6 +5,7 @@ import os
 import logging
 import uuid
 import re
+import datetime
 from errno import ENOENT
 import xml.etree.ElementTree as ET
 
@@ -497,15 +498,72 @@ def list_snapshots(vm_name):
         return rbd.list_image_snapshots(disk_name)
 
 
-def purge_image(vm_name):
+def purge_image(vm_name, date=None, number=None):
     """
     Remove all snapshots of the given type on the given VM.
     :param vm_name: the VM name to be purged
+    :param date: date until snapshots must be removed
+    :param number: number of snapshots to delete starting from the oldest
     """
-    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+    if date:
+        if number:
+            raise ValueError("Only date or number arguments must be provided")
+
+        if not isinstance(date, datetime.datetime):
+            raise ValueError("Parameter date is not datetime")
+
         disk_name = OS_DISK_PREFIX + vm_name
-        rbd.purge_image(disk_name)
-        logger.info("Image " + disk_name + " successfully purged")
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+            # snapshot list is sorted by creation date
+            for snap in rbd.list_image_snapshots(disk_name, flat=False):
+                snap_ts = rbd.get_image_snapshot_timestamp(
+                    disk_name, snap["id"]
+                )
+                if snap_ts.timestamp() < date.timestamp():
+                    rbd.remove_image_snapshot(disk_name, snap["name"])
+
+            logger.info(
+                "Snapshots of image "
+                + disk_name
+                + " previous to "
+                + str(date)
+                + " have been removed"
+            )
+
+    elif number:
+        if not isinstance(number, int) or number < 1:
+            raise ValueError("Parameter number must be a postive integer")
+
+        disk_name = OS_DISK_PREFIX + vm_name
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
+            # snapshot list is sorted by creation date
+            snap_list = rbd.list_image_snapshots(disk_name)
+            if len(snap_list) <= number:
+                rbd.purge_image(disk_name)
+                logger.info(
+                    "All snapshots from image "
+                    + disk_name
+                    + " successfully removed"
+                )
+            else:
+                for snap in snap_list[:number]:
+                    rbd.remove_image_snapshot(disk_name, snap)
+                logger.info(
+                    "First "
+                    + str(number)
+                    + " snapshots of image "
+                    + disk_name
+                    + " have been removed"
+                )
+    else:
+
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            disk_name = OS_DISK_PREFIX + vm_name
+            rbd.purge_image(disk_name)
+            logger.info("Image " + disk_name + " successfully purged")
 
 
 def rollback_snapshot(vm_name, snapshot_name):

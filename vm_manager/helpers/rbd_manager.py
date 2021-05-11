@@ -271,13 +271,19 @@ class RbdManager:
             img_inst.close()
 
     # Snapshots related methods
-    def list_image_snapshots(self, img):
+    def list_image_snapshots(self, img, flat=True):
         """
         Return a list of all snapshots from an image.
         """
         img_inst = self._get_image(img)
         try:
-            return [x["name"] for x in img_inst.list_snaps()]
+            if flat:
+                return [x["name"] for x in img_inst.list_snaps()]
+            else:
+                return [
+                    {"name": x["name"], "id": x["id"]}
+                    for x in img_inst.list_snaps()
+                ]
         finally:
             img_inst.close()
 
@@ -317,9 +323,12 @@ class RbdManager:
         """
         img_inst = self._get_image(img)
         try:
-            for s in img_inst.list_snaps():
-                if s["name"] == snap:
-                    return img_inst.get_snap_timestamp(s["id"])
+            if isinstance(snap, int):
+                return img_inst.get_snap_timestamp(snap)
+            else:
+                for s in img_inst.list_snaps():
+                    if s["name"] == snap:
+                        return img_inst.get_snap_timestamp(s["id"])
             raise RbdException("Snapshot " + snap + " not found")
         finally:
             img_inst.close()

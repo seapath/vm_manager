@@ -9,6 +9,7 @@ A cli wrapper for vm_manager module
 import argparse
 import vm_manager
 import logging
+import datetime
 
 
 class ParseMetaData(argparse.Action):
@@ -59,7 +60,9 @@ if __name__ == "__main__":
     list_snaps_parser = subparsers.add_parser(
         "list_snapshots", help="List all snapshots from a VM"
     )
-    subparsers.add_parser("purge", help="Purge all snapshots from a VM")
+    purge_parser = subparsers.add_parser(
+        "purge", help="Purge snapshots from a VM"
+    )
     rollback_parser = subparsers.add_parser(
         "rollback", help="Rollback a VM to a given snapshot"
     )
@@ -134,6 +137,20 @@ if __name__ == "__main__":
         "--snap_name", type=str, required=True, help="Snapshot to be removed"
     )
 
+    purge_parser.add_argument(
+        "--date",
+        type=lambda s: datetime.datetime.strptime(s, "%d/%m/%Y %H:%M:%S"),
+        required=False,
+        help="Date until snapshots must be removed, i.e., 20/04/2021 14:02:32",
+    )
+
+    purge_parser.add_argument(
+        "--number",
+        type=int,
+        required=False,
+        help="Number of snapshots to delete starting from the oldest",
+    )
+
     rollback_parser.add_argument(
         "--snap_name",
         type=str,
@@ -169,7 +186,7 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.WARNING)
     if args.command == "list":
-        vm_manager.list_vms()
+        print(vm_manager.list_vms())
     elif args.command == "start":
         vm_manager.start(args.name)
     elif args.command == "stop":
@@ -213,7 +230,7 @@ if __name__ == "__main__":
     elif args.command == "list_snapshots":
         print(vm_manager.list_snapshots(args.name))
     elif args.command == "purge":
-        vm_manager.purge_image(args.name)
+        vm_manager.purge_image(args.name, args.date, args.number)
     elif args.command == "rollback":
         vm_manager.rollback_snapshot(args.name, args.snap_name)
     elif args.command == "list_metadata":
