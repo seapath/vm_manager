@@ -125,8 +125,9 @@ def _configure_vm(vm_name, base_xml, enable, metadata):
         rbd.set_image_metadata(disk_name, "vm_name", vm_name)
         rbd.set_image_metadata(disk_name, "xml", xml)
         rbd.set_image_metadata(disk_name, "_base_xml", base_xml)
-        for name, data in metadata.items():
-            rbd.set_image_metadata(disk_name, name, data)
+        if metadata:
+            for name, data in metadata.items():
+                rbd.set_image_metadata(disk_name, name, data)
     logger.info("Image " + disk_name + " initial metadata set")
 
     # Define libvirt xml configuration
@@ -175,11 +176,12 @@ def create(
     # Validate parameters and required files
     _check_name(vm_name)
 
-    if not isinstance(metadata, dict):
-        raise ValueError("metadata parameter must be a dictionary")
+    if metadata:
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata parameter must be a dictionary")
 
-    for name, value in metadata.items():
-        _check_name(name)
+        for name, value in metadata.items():
+            _check_name(name)
 
     for f in [CEPH_CONF, system_image]:
         if not os.path.isfile(f):
@@ -396,11 +398,12 @@ def clone(
 
     _check_name(dst_vm_name)
 
-    if not isinstance(metadata, dict):
-        raise ValueError("metadata parameter must be a dictionary")
+    if metadata:
+        if not isinstance(metadata, dict):
+            raise ValueError("metadata parameter must be a dictionary")
 
-    for name, value in metadata.items():
-        _check_name(name)
+        for name, value in metadata.items():
+            _check_name(name)
 
     src_disk = OS_DISK_PREFIX + src_vm_name
     dst_disk = OS_DISK_PREFIX + dst_vm_name
