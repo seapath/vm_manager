@@ -177,15 +177,12 @@ def create(
     if not isinstance(metadata, dict):
         raise ValueError("metadata parameter must be a dictionary")
 
-    for name, value in metadata:
+    for name, value in metadata.items():
         _check_name(name)
 
     for f in [CEPH_CONF, system_image]:
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
-
-    if not isinstance(metadata, dict):
-        raise ValueError("metadata parameter must be a dictionary")
 
     # Create VM group
     _create_vm_group(vm_name, force)
@@ -401,7 +398,7 @@ def clone(
     if not isinstance(metadata, dict):
         raise ValueError("metadata parameter must be a dictionary")
 
-    for name, value in metadata:
+    for name, value in metadata.items():
         _check_name(name)
 
     src_disk = OS_DISK_PREFIX + src_vm_name
@@ -517,12 +514,22 @@ def rollback_snapshot(vm_name, snapshot_name):
     :param vm_name: the VM name to be restored
     :param snapshot_name: the snapshot name to be used for rollback
     """
-    enabled = is_enabled(vm_name)
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+
         disk_name = OS_DISK_PREFIX + vm_name
+        if not rbd.image_snapshot_exists(disk_name, snapshot_name):
+            raise Exception(
+                "Snapshot "
+                + snapshot_name
+                + " does not exist on VM "
+                + vm_name
+            )
+
+        enabled = is_enabled(vm_name)
         if enabled:
             disable_vm(vm_name)
+
         rbd.rollback_image(disk_name, snapshot_name)
         logger.info(
             "Image "
