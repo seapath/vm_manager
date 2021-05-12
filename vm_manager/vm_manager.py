@@ -158,7 +158,6 @@ def create(
     vm_name,
     base_xml,
     system_image,
-    data_size=None,
     force=False,
     enable=True,
     metadata={},
@@ -168,7 +167,6 @@ def create(
     :param vm_name: the VM name
     :param xml: the VM libvirt xml configuration
     :param system_image: the path of the system image disk to use
-    :param data_size: the optional image data disk size. Used suffix K, M, or G
     :param force: set to True to replace a existing VM with this new VM
     :param enable: set to True to enable the VM in Pacemaker
     """
@@ -374,7 +372,6 @@ def clone(
     src_vm_name,
     dst_vm_name,
     base_xml=None,
-    data="clone",
     force=False,
     enable=True,
     metadata={},
@@ -383,9 +380,6 @@ def clone(
     Create a new VM from another
     :param src_vm_name: the source VM to be cloned
     :param dst_vm_name: the new VM name
-    :param data: the data disk. Can be "clone" to copy the source data disk,
-                 None to disable data disk or a integer size with suffix K, M,
-                 G to create a new empty data disk of the given size
     :param force: set to True to replace an existing VM with this new VM
     :param enable: set to True to enable the VM in Pacemaker
     """
