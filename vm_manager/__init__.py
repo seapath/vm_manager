@@ -16,4 +16,7 @@ from vm_manager.vm_manager import (
     list_snapshots,
     purge_image,
     rollback_snapshot,
+    list_metadata,
+    get_metadata,
+    set_metadata,
 )
