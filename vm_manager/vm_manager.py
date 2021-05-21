@@ -218,10 +218,6 @@ def remove(vm_name):
     :param vm_name: the VM name to be removed
     """
 
-    # Check if VM exists
-    if vm_name not in list_vms():
-        raise Exception("VM " + vm_name + " does not exist")
-
     # Disable from Pacemaker
     disable_vm(vm_name)
 
