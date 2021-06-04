@@ -1,0 +1,29 @@
+[project]
+org='rte'
+name='vm_manager'
+
+flavors='check sonar check_format format flake'
+
+[build]
+command='python3 setup.py install --prefix .'
+
+[sonar]
+command='/usr/bin/python-sonar.sh \
+        pacemaker_helper \
+        rbd_helper \
+        vm_manager'
+
+[check]
+command='pylint \
+        pacemaker_helper \
+        rbd_helper \
+        vm_manager'
+
+[check_format]
+command='black -l 79 -t py38 --check .'
+
+[format]
+command='black -l 79 -t py38 .'
+
+[flake]
+command='flake8'
