@@ -7,7 +7,8 @@ import uuid
 import re
 import datetime
 from errno import ENOENT
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ElementTree
+import configparser
 
 from vm_manager.helpers.rbd_manager import RbdManager
 from vm_manager.helpers.pacemaker import Pacemaker
@@ -47,7 +48,7 @@ def _check_name(name):
 def _create_vm_group(vm_name, force=False):
     """
     Create vm_name group and check its creation. Group can be
-    overwriten if force is set to True.
+    overwritten if force is set to True.
     """
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
@@ -72,15 +73,15 @@ def _create_xml(xml, vm_name):
     disk_name parameters.
     """
     disk_name = OS_DISK_PREFIX + vm_name
-    xml_root = ET.fromstring(xml)
+    xml_root = ElementTree.fromstring(xml)
     try:
         xml_root.remove(xml_root.findall("./name")[0])
         xml_root.remove(xml_root.findall("./uuid")[0])
     except IndexError:
         pass
-    name_element = ET.SubElement(xml_root, "name")
+    name_element = ElementTree.SubElement(xml_root, "name")
     name_element.text = vm_name
-    name_element = ET.SubElement(xml_root, "uuid")
+    name_element = ElementTree.SubElement(xml_root, "uuid")
     name_element.text = str(uuid.uuid4())
     rbd_secret = None
     with LibVirtManager() as libvirt_manager:
@@ -90,7 +91,7 @@ def _create_xml(xml, vm_name):
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_xml = ET.fromstring(
+    disk_xml = ElementTree.fromstring(
         """<disk type="network" device="disk">
             <driver name="qemu" type="raw" cache="writeback" />
             <auth username="libvirt">
@@ -105,10 +106,12 @@ def _create_xml(xml, vm_name):
         )
     )
     xml_root.find("devices").append(disk_xml)
-    return ET.tostring(xml_root).decode()
+    return ElementTree.tostring(xml_root).decode()
 
 
-def _configure_vm(vm_name, base_xml, enable, metadata):
+def _configure_vm(
+    vm_name, base_xml, enable, metadata, preferred_host, pined_host
+):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
     configuration and add it on Pacemaker if enable is set to True.
@@ -125,6 +128,12 @@ def _configure_vm(vm_name, base_xml, enable, metadata):
         rbd.set_image_metadata(disk_name, "vm_name", vm_name)
         rbd.set_image_metadata(disk_name, "xml", xml)
         rbd.set_image_metadata(disk_name, "_base_xml", base_xml)
+        if pined_host:
+            rbd.set_image_metadata(disk_name, "_pined_host", pined_host)
+        elif preferred_host:
+            rbd.set_image_metadata(
+                disk_name, "_preferred_host", preferred_host
+            )
         if metadata:
             for name, data in metadata.items():
                 rbd.set_image_metadata(disk_name, name, data)
@@ -139,6 +148,16 @@ def _configure_vm(vm_name, base_xml, enable, metadata):
     # Enable on Pacemaker
     if enable:
         enable_vm(vm_name)
+
+
+def _get_observer_host():
+    """
+    Get the observer host stored in /etc/cluster.conf
+    """
+    parser = configparser.ConfigParser()
+    with open("/etc/cluster.conf", "r") as fd:
+        parser.read_file(fd)
+    return parser["machines"]["observer"]
 
 
 def list_vms(enabled=False):
@@ -160,15 +179,21 @@ def create(
     system_image,
     force=False,
     enable=True,
-    metadata={},
+    metadata=None,
+    preferred_host=None,
+    pined_host=None,
 ):
     """
     Create a new VM
     :param vm_name: the VM name
-    :param xml: the VM libvirt xml configuration
+    :param base_xml: the VM libvirt xml configuration
     :param system_image: the path of the system image disk to use
-    :param force: set to True to replace a existing VM with this new VM
+    :param force: set to True to replace an existing VM with this new VM
     :param enable: set to True to enable the VM in Pacemaker
+    :param metadata: metadata do add to the VM
+    :param preferred_host: the host in which the VM will be deployed by default
+    :param pined_host: the host in  which the VM will be deployed.
+    The VM will never switch to another host
     """
 
     # Validate parameters and required files
@@ -203,7 +228,9 @@ def create(
                 raise Exception("Could not import qcow2: " + system_image)
 
             # Configure VM
-            _configure_vm(vm_name, base_xml, enable, metadata)
+            _configure_vm(
+                vm_name, base_xml, enable, metadata, preferred_host, pined_host
+            )
 
         except Exception as err:
             remove(vm_name)
@@ -255,12 +282,14 @@ def enable_vm(vm_name):
 
         if vm_name not in p.list_resources():
             xml_path = os.path.join(XML_PACEMAKER_PATH, vm_name + ".xml")
-            p.add_vm(xml_path)
+            p.add_vm(xml_path, is_managed=False)
 
             if vm_name not in p.list_resources():
                 raise Exception(
                     "Could not add VM " + vm_name + " to the cluster"
                 )
+            p.disable_location(_get_observer_host())
+            p.manage()
             p.wait_for("Started")
 
         else:
@@ -370,14 +399,26 @@ def clone(
     base_xml=None,
     force=False,
     enable=True,
-    metadata={},
+    metadata=None,
+    preferred_host=None,
+    pined_host=None,
+    clear_constraint=False,
 ):
     """
     Create a new VM from another
     :param src_vm_name: the source VM to be cloned
     :param dst_vm_name: the new VM name
+    :param base_xml: the VM libvirt xml configuration
     :param force: set to True to replace an existing VM with this new VM
     :param enable: set to True to enable the VM in Pacemaker
+    :param metadata: metadata to add to the VM
+    :param preferred_host: the host in which the VM will be deployed by
+    default. This will replace source preferred_host and pined_host.
+    :param pined_host: the host in  which the VM will be deployed.
+    The VM will never switch to another host. This will replace source
+    preferred_host and pined_host.
+    :param clear_constraint: If the set to true the source location constraint w
+    ill not be kept
     """
 
     if src_vm_name == dst_vm_name:
@@ -404,6 +445,15 @@ def clone(
             if not base_xml:
                 raise Exception("Could not find xml libvirt configuration")
 
+        if not clear_constraint:
+            metadata_list = rbd.list_image_metadata(src_disk)
+            if not preferred_host and "_preferred_host" in metadata_list:
+                preferred_host = rbd.get_image_metadata(
+                    src_disk, "_preferred_host"
+                )
+            if not preferred_host and "_pined_host" in metadata_list:
+                pined_host = rbd.get_image_metadata(src_disk, "_pined_host")
+
     _create_vm_group(dst_vm_name, force)
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -413,13 +463,20 @@ def clone(
                 rbd.remove_image(dst_disk)
 
             # Note: Only deep-copy works for images that are on a group
-            # (destiantion img will keep the snaps but not the group)
+            # (destination img will keep the snaps but not the group)
             rbd.copy_image(src_disk, dst_disk, overwrite=force, deep=True)
             if not rbd.image_exists(dst_disk):
                 raise Exception("Could not create image disk " + dst_disk)
 
             # Configure VM
-            _configure_vm(dst_vm_name, base_xml, enable, metadata)
+            _configure_vm(
+                dst_vm_name,
+                base_xml,
+                enable,
+                metadata,
+                preferred_host,
+                pined_host,
+            )
 
         except Exception as err:
             remove(dst_vm_name)
@@ -527,7 +584,7 @@ def purge_image(vm_name, date=None, number=None):
 
     elif number:
         if not isinstance(number, int) or number < 1:
-            raise ValueError("Parameter number must be a postive integer")
+            raise ValueError("Parameter number must be a positive integer")
 
         disk_name = OS_DISK_PREFIX + vm_name
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
