@@ -59,7 +59,12 @@ class Pacemaker:
         Executes $ crm_resource followed by the command cmd and the
         arguments args on the resource _resource.
         """
-        command = ["crm", "resource"] + [cmd] + list(args) + [self._resource]
+        command = (
+            ["/usr/bin/crm", "resource"]
+            + [cmd]
+            + list(args)
+            + [self._resource]
+        )
         logger.info("Execute: " + (str(subprocess.list2cmdline(command))))
         subprocess.run(command, check=True)
 
@@ -85,7 +90,12 @@ class Pacemaker:
         """
         Bypasses the cluster and stop a resource on the local node.
         """
-        args = ["crm_resource", "--force-stop", "--resource", self._resource]
+        args = [
+            "/usr/bin/crm_resource",
+            "--force-stop",
+            "--resource",
+            self._resource,
+        ]
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
         subprocess.run(args, check=True)
 
@@ -100,7 +110,11 @@ class Pacemaker:
         """
         List node resources.
         """
-        args = ["crm", "resource", "list"]
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "list",
+        ]
         output_cmd = subprocess.run(args, check=True, capture_output=True)
         output = output_cmd.stdout.decode()
 
@@ -119,7 +133,11 @@ class Pacemaker:
         resources.
         """
         args = (
-            ["crm", "configure", "delete"]
+            [
+                "/usr/bin/crm",
+                "configure",
+                "delete",
+            ]
             + (["--force"] if force else [])
             + [self._resource]
         )
@@ -130,7 +148,11 @@ class Pacemaker:
         """
         Show Cluster Information Base for _resource.
         """
-        args = ["crm", "resource", "show"]
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "show",
+        ]
         output = subprocess.run(args, check=True, capture_output=True)
         output_list = output.stdout.decode("utf-8").split("\n")
 
@@ -146,7 +168,10 @@ class Pacemaker:
         """
         Show cluster status.
         """
-        subprocess.run(["crm", "status"], check=True)
+        subprocess.run(
+            ["/usr/bin/crm", "status"],
+            check=True,
+        )
 
     def add_vm(
         self,
@@ -172,7 +197,7 @@ class Pacemaker:
         r_node = ["remote-node=" + remote_node] if remote_node != "" else []
 
         args = [
-            "crm",
+            "/usr/bin/crm",
             "configure",
             "primitive",
             self._resource,
@@ -208,7 +233,7 @@ class Pacemaker:
         TODO: NOT TESTED
         """
         args = [
-            "crm",
+            "/usr/bin/crm",
             "configure",
             "location",
             "no-probe",

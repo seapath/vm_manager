@@ -565,5 +565,14 @@ class RbdManager:
         """
         # format:  rbd:{pool-name}/{image-name}[@snapshot-name]
         dest = "rbd:" + self._pool + "/" + dest
-        args = ["qemu-img", "convert", "-f", "qcow2", "-O", "raw", src, dest]
+        args = [
+            "/usr/bin/qemu-img",
+            "convert",
+            "-f",
+            "qcow2",
+            "-O",
+            "raw",
+            src,
+            dest,
+        ]
         subprocess.run(args, check=True)

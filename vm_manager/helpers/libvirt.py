@@ -81,7 +81,7 @@ class LibVirtManager:
         :param xml_path: the path where the XML configuration will be exported
         """
         subprocess.run(
-            "virsh -c 'qemu:///system' dumpxml {} > {}".format(
+            "/usr/bin/virsh -c 'qemu:///system' dumpxml {} > {}".format(
                 domain, xml_path
             ),
             check=True,
