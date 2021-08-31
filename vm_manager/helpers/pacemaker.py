@@ -48,7 +48,7 @@ class Pacemaker:
         """
         self._resource = resource
 
-    def get_resource(self, resource):
+    def get_resource(self):
         """
         Getter for variable resource
         """
@@ -226,27 +226,63 @@ class Pacemaker:
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
         subprocess.run(args, check=True)
 
-    def set_location(self, node):
+    def manage(self):
         """
-        Define on which nodes a resource must be run.
+        Manage a VM by Pacemaker
+        """
+        subprocess.run(
+            ["/usr/bin/crm", "resource", "manage", self._resource], check=True
+        )
+
+    def disable_location(self, node):
+        """
+        Define on which nodes a resource must never be run.
         Note: It will be used to restrict the VM on the hypervisors.
-        TODO: NOT TESTED
+        """
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "ban",
+            self._resource,
+            node,
+        ]
+
+        subprocess.run(args, check=True)
+
+    def pin_location(self, node):
+        """
+        Pin a VM on a node.
         """
         args = [
             "/usr/bin/crm",
             "configure",
             "location",
-            "no-probe",
+            f"pin-{self._resource}-on{node}",
             self._resource,
-            "resource-discovery=never",
-            "-inf: " + str(node),
+            "resource-discovery=exclusive",
+            f"inf: {node}",
+        ]
+
+        subprocess.run(args, check=True)
+
+    def default_location(self, node):
+        """
+        Set the VM default location. The VM will be deployed on the given node
+        unless the node is up.
+        """
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "move",
+            self._resource,
+            node,
         ]
 
         subprocess.run(args, check=True)
 
     def wait_for(self, state, periods=0.2, nb_periods=100):
         """
-        Wait for a VM enter in the given state
+        Wait for a VM enter the given state
         Check every period in s.
         """
         ticker = threading.Event()
