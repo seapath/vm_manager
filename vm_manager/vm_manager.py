@@ -417,8 +417,8 @@ def clone(
     :param pined_host: the host in  which the VM will be deployed.
     The VM will never switch to another host. This will replace source
     preferred_host and pined_host.
-    :param clear_constraint: If the set to true the source location constraint w
-    ill not be kept
+    :param clear_constraint: If the set to true the source location constraint
+    will not be kept
     """
 
     if src_vm_name == dst_vm_name:
@@ -441,18 +441,19 @@ def clone(
 
     if not base_xml:
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-            base_xml = rbd.get_image_metadata(src_disk, "_base_xml")
+            try:
+                base_xml = rbd.get_image_metadata(src_disk, "_base_xml")
+                if not clear_constraint:
+                    preferred_host = rbd.get_image_metadata(
+                        src_disk, "_preferred_host"
+                    )
+                    pined_host = rbd.get_image_metadata(
+                        src_disk, "_pined_host"
+                    )
+            except KeyError:
+                pass
             if not base_xml:
                 raise Exception("Could not find xml libvirt configuration")
-
-        if not clear_constraint:
-            metadata_list = rbd.list_image_metadata(src_disk)
-            if not preferred_host and "_preferred_host" in metadata_list:
-                preferred_host = rbd.get_image_metadata(
-                    src_disk, "_preferred_host"
-                )
-            if not preferred_host and "_pined_host" in metadata_list:
-                pined_host = rbd.get_image_metadata(src_disk, "_pined_host")
 
     _create_vm_group(dst_vm_name, force)
 
