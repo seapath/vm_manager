@@ -110,7 +110,7 @@ def _create_xml(xml, vm_name):
 
 
 def _configure_vm(
-    vm_name, base_xml, enable, metadata, preferred_host, pined_host
+    vm_name, base_xml, enable, metadata, preferred_host, pinned_host
 ):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
@@ -128,8 +128,8 @@ def _configure_vm(
         rbd.set_image_metadata(disk_name, "vm_name", vm_name)
         rbd.set_image_metadata(disk_name, "xml", xml)
         rbd.set_image_metadata(disk_name, "_base_xml", base_xml)
-        if pined_host:
-            rbd.set_image_metadata(disk_name, "_pined_host", pined_host)
+        if pinned_host:
+            rbd.set_image_metadata(disk_name, "_pinned_host", pinned_host)
         elif preferred_host:
             rbd.set_image_metadata(
                 disk_name, "_preferred_host", preferred_host
@@ -181,7 +181,7 @@ def create(
     enable=True,
     metadata=None,
     preferred_host=None,
-    pined_host=None,
+    pinned_host=None,
 ):
     """
     Create a new VM
@@ -192,7 +192,7 @@ def create(
     :param enable: set to True to enable the VM in Pacemaker
     :param metadata: metadata do add to the VM
     :param preferred_host: the host in which the VM will be deployed by default
-    :param pined_host: the host in  which the VM will be deployed.
+    :param pinned_host: the host in  which the VM will be deployed.
     The VM will never switch to another host
     """
 
@@ -209,6 +209,11 @@ def create(
     for f in [CEPH_CONF, system_image]:
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
+
+    if pinned_host and not Pacemaker.is_valid_host(pinned_host):
+        raise Exception(f"{pinned_host} is not valid hypervisor")
+    if preferred_host and not Pacemaker.is_valid_host(preferred_host):
+        raise Exception(f"{preferred_host} is not a valid hypervisor")
 
     # Create VM group
     _create_vm_group(vm_name, force)
@@ -229,7 +234,12 @@ def create(
 
             # Configure VM
             _configure_vm(
-                vm_name, base_xml, enable, metadata, preferred_host, pined_host
+                vm_name,
+                base_xml,
+                enable,
+                metadata,
+                preferred_host,
+                pinned_host,
             )
 
         except Exception as err:
@@ -282,6 +292,26 @@ def enable_vm(vm_name):
 
         if vm_name not in p.list_resources():
             xml_path = os.path.join(XML_PACEMAKER_PATH, vm_name + ".xml")
+            disk_name = OS_DISK_PREFIX + vm_name
+            preferred_host = None
+            pinned_host = None
+            with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+                try:
+                    preferred_host = rbd.get_image_metadata(
+                        disk_name, "_preferred_host"
+                    )
+                except KeyError:
+                    pass
+                try:
+                    pinned_host = rbd.get_image_metadata(
+                        disk_name, "_pinned_host"
+                    )
+                except KeyError:
+                    pass
+            if pinned_host and not Pacemaker.is_valid_host(pinned_host):
+                raise Exception(f"{pinned_host} is not valid hypervisor")
+            if preferred_host and not Pacemaker.is_valid_host(preferred_host):
+                raise Exception(f"{preferred_host} is not valid hypervisor")
             p.add_vm(xml_path, is_managed=False)
 
             if vm_name not in p.list_resources():
@@ -289,6 +319,10 @@ def enable_vm(vm_name):
                     "Could not add VM " + vm_name + " to the cluster"
                 )
             p.disable_location(_get_observer_host())
+            if pinned_host:
+                p.pin_location(pinned_host)
+            elif preferred_host:
+                p.default_location(preferred_host)
             p.manage()
             p.wait_for("Started")
 
@@ -401,7 +435,7 @@ def clone(
     enable=True,
     metadata=None,
     preferred_host=None,
-    pined_host=None,
+    pinned_host=None,
     clear_constraint=False,
 ):
     """
@@ -413,10 +447,10 @@ def clone(
     :param enable: set to True to enable the VM in Pacemaker
     :param metadata: metadata to add to the VM
     :param preferred_host: the host in which the VM will be deployed by
-    default. This will replace source preferred_host and pined_host.
-    :param pined_host: the host in  which the VM will be deployed.
+    default. This will replace source preferred_host and pinned_host.
+    :param pinned_host: the host in  which the VM will be deployed.
     The VM will never switch to another host. This will replace source
-    preferred_host and pined_host.
+    preferred_host and pinned_host.
     :param clear_constraint: If the set to true the source location constraint
     will not be kept
     """
@@ -441,20 +475,25 @@ def clone(
 
     if not base_xml:
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            base_xml = rbd.get_image_metadata(src_disk, "_base_xml")
+        if not base_xml:
+            raise Exception("Could not find xml libvirt configuration")
+    if not clear_constraint and not preferred_host and not pinned_host:
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
             try:
-                base_xml = rbd.get_image_metadata(src_disk, "_base_xml")
-                if not clear_constraint:
-                    preferred_host = rbd.get_image_metadata(
-                        src_disk, "_preferred_host"
-                    )
-                    pined_host = rbd.get_image_metadata(
-                        src_disk, "_pined_host"
-                    )
+                preferred_host = rbd.get_image_metadata(
+                    src_disk, "_preferred_host"
+                )
             except KeyError:
                 pass
-            if not base_xml:
-                raise Exception("Could not find xml libvirt configuration")
-
+            try:
+                pinned_host = rbd.get_image_metadata(src_disk, "_pinned_host")
+            except KeyError:
+                pass
+    if pinned_host and not Pacemaker.is_valid_host(pinned_host):
+        raise Exception(f"{pinned_host} is not valid hypervisor")
+    elif preferred_host and not Pacemaker.is_valid_host(preferred_host):
+        raise Exception(f"{preferred_host} is not valid hypervisor")
     _create_vm_group(dst_vm_name, force)
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -468,6 +507,14 @@ def clone(
             rbd.copy_image(src_disk, dst_disk, overwrite=force, deep=True)
             if not rbd.image_exists(dst_disk):
                 raise Exception("Could not create image disk " + dst_disk)
+            try:
+                rbd.remove_image_metadata(dst_disk, "_preferred_host")
+            except KeyError:
+                pass
+            try:
+                rbd.remove_image_metadata(dst_disk, "_pinned_host")
+            except KeyError:
+                pass
 
             # Configure VM
             _configure_vm(
@@ -476,7 +523,7 @@ def clone(
                 enable,
                 metadata,
                 preferred_host,
-                pined_host,
+                pinned_host,
             )
 
         except Exception as err:

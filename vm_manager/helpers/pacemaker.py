@@ -44,13 +44,13 @@ class Pacemaker:
 
     def set_resource(self, resource):
         """
-        Setter for variable resource
+        Setter for variable resource.
         """
         self._resource = resource
 
     def get_resource(self):
         """
-        Getter for variable resource
+        Getter for variable resource.
         """
         return self._resource
 
@@ -227,7 +227,7 @@ class Pacemaker:
 
     def manage(self):
         """
-        Manage a VM by Pacemaker
+        Manage a VM by Pacemaker.
         """
         subprocess.run(
             ["/usr/bin/crm", "resource", "manage", self._resource], check=True
@@ -259,7 +259,8 @@ class Pacemaker:
             f"pin-{self._resource}-on{node}",
             self._resource,
             "resource-discovery=exclusive",
-            f"inf: {node}",
+            "inf:",
+            node,
         ]
 
         subprocess.run(args, check=True)
@@ -281,7 +282,7 @@ class Pacemaker:
 
     def wait_for(self, state, periods=0.2, nb_periods=100):
         """
-        Wait for a VM enter the given state
+        Wait for a VM enter the given state.
         Check every period in s.
         """
         ticker = threading.Event()
@@ -290,3 +291,13 @@ class Pacemaker:
                 return
             nb_periods -= 1
         raise PacemakerException("Timeout")
+
+    @staticmethod
+    def is_valid_host(host):
+        """
+        Check if a host is found in the cluster.
+        :param host: the host to test
+        :return: True if the host is in the cluster, false otherwise
+        """
+        ret = subprocess.run(["/usr/bin/crm", "node", "status", host])
+        return ret.returncode == 0

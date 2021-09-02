@@ -120,9 +120,30 @@ if __name__ == "__main__":
             nargs="+",
             action=ParseMetaData,
         )
+        p.add_argument(
+            "--pinned-host",
+            type=str,
+            required=False,
+            default=None,
+            help="Pin the VM on the given host",
+        )
+        p.add_argument(
+            "--preferred-host",
+            type=str,
+            required=False,
+            default=None,
+            help="Deploy the VM on the given host in priority",
+        )
 
     clone_parser.add_argument(
         "--dst_name", type=str, required=True, help="Destination VM name"
+    )
+
+    clone_parser.add_argument(
+        "--clear_constraint",
+        action="store_true",
+        required=False,
+        help="Do not keep location constraint",
     )
 
     clone_parser.add_argument(
@@ -203,6 +224,8 @@ if __name__ == "__main__":
             enable=(not args.disable),
             force=args.force,
             metadata=args.metadata,
+            preferred_host=args.preferred_host,
+            pinned_host=args.pinned_host,
         )
     elif args.command == "clone":
         xml_data = None
@@ -216,6 +239,9 @@ if __name__ == "__main__":
             enable=(not args.disable),
             force=args.force,
             metadata=args.metadata,
+            preferred_host=args.preferred_host,
+            pinned_host=args.pinned_host,
+            clear_constraint=args.clear_constraint,
         )
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
