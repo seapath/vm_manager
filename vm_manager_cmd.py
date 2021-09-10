@@ -76,6 +76,10 @@ if __name__ == "__main__":
         "get_metadata", help="Set metadata value"
     )
 
+    add_colocation_parser = subparsers.add_parser(
+        "add_colocation", help="Add a colocation constraint"
+    )
+
     for name, subparser in subparsers.choices.items():
         if name != "list":
             subparser.add_argument(
@@ -200,6 +204,20 @@ if __name__ == "__main__":
         help="Metadata value to be stored",
     )
 
+    add_colocation_parser.add_argument(
+        "resources",
+        type=str,
+        nargs="+",
+        help="VMs or other Pacemaker resources to be colocated with the VM",
+    )
+
+    add_colocation_parser.add_argument(
+        "--strong",
+        action="store_true",
+        required=False,
+        help="Create a strong colocation constraint",
+    )
+
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -266,4 +284,8 @@ if __name__ == "__main__":
     elif args.command == "set_metadata":
         vm_manager.set_metadata(
             args.name, args.metadata_name, args.metadata_value
+        )
+    elif args.command == "add_colocation":
+        vm_manager.add_colocation(
+            args.name, *args.resources, strong=args.strong
         )

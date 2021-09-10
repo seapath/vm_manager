@@ -744,3 +744,19 @@ def set_metadata(vm_name, metadata_name, metadata_value):
         + metadata_value
         + ")"
     )
+
+
+def add_colocation(vm_name, *resources, strong=False):
+    """
+    Add a colocation constraint to a VM.
+    :param vm_name: the VM name to constraint
+    :param resources: VMs or other Pacemaker resources to be colocated with the
+    VM. The resource must already be created and if the resource is a VM, then
+    it must be enabled. Disabling a VM will remove its constraints.
+    :param strong: If strong is set to True, add a strong colocation. In a
+    strong colocation the VM will be started only if all resources colocated
+    with it are started too and the VM will stop if one of them is stopped.
+    """
+    _check_name(vm_name)
+    with Pacemaker(vm_name) as p:
+        p.add_colocation(*resources, strong=strong)

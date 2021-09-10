@@ -19,4 +19,5 @@ from .vm_manager import (
     list_metadata,
     get_metadata,
     set_metadata,
+    add_colocation,
 )

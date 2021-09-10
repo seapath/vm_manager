@@ -265,6 +265,28 @@ class Pacemaker:
 
         subprocess.run(args, check=True)
 
+    def add_colocation(self, *resources, strong=False):
+        """
+        Group a VM with other resources
+        """
+        if not resources:
+            raise Exception("At least one resource is needed")
+        args = [
+            "/usr/bin/crm",
+            "configure",
+            "colocation",
+            f"colocation-{'strong-' if strong else ''}{self._resource}"
+            f"-with{'-'.join(resources)}",
+            f"{'inf' if strong else '700'}:",
+            self._resource,
+            "(",
+        ]
+
+        args += resources
+        args.append(")")
+
+        subprocess.run(args, check=True)
+
     def default_location(self, node):
         """
         Set the VM default location. The VM will be deployed on the given node
