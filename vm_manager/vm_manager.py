@@ -10,9 +10,9 @@ from errno import ENOENT
 import xml.etree.ElementTree as ElementTree
 import configparser
 
-from vm_manager.helpers.rbd_manager import RbdManager
-from vm_manager.helpers.pacemaker import Pacemaker
-from vm_manager.helpers.libvirt import LibVirtManager
+from .helpers.rbd_manager import RbdManager
+from .helpers.pacemaker import Pacemaker
+from .helpers.libvirt import LibVirtManager
 
 XML_PACEMAKER_PATH = "/etc/pacemaker"
 
