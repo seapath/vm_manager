@@ -207,7 +207,7 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.WARNING)
     if args.command == "list":
-        print(vm_manager.list_vms())
+        print("\n".join(vm_manager.list_vms()))
     elif args.command == "start":
         vm_manager.start(args.name)
     elif args.command == "stop":
