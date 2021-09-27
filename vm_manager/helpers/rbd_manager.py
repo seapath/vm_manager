@@ -421,6 +421,16 @@ class RbdManager:
         finally:
             img_inst.close()
 
+    def remove_image_metadata(self, img, key):
+        """
+        Remove metadata.
+        """
+        img_inst = self._get_image(img)
+        try:
+            img_inst.metadata_remove(key)
+        finally:
+            img_inst.close()
+
     # Group methods
     def list_groups(self):
         """
@@ -565,5 +575,14 @@ class RbdManager:
         """
         # format:  rbd:{pool-name}/{image-name}[@snapshot-name]
         dest = "rbd:" + self._pool + "/" + dest
-        args = ["qemu-img", "convert", "-f", "qcow2", "-O", "raw", src, dest]
+        args = [
+            "/usr/bin/qemu-img",
+            "convert",
+            "-f",
+            "qcow2",
+            "-O",
+            "raw",
+            src,
+            dest,
+        ]
         subprocess.run(args, check=True)

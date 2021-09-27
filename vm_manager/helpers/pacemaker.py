@@ -44,13 +44,13 @@ class Pacemaker:
 
     def set_resource(self, resource):
         """
-        Setter for variable resource
+        Setter for variable resource.
         """
         self._resource = resource
 
-    def get_resource(self, resource):
+    def get_resource(self):
         """
-        Getter for variable resource
+        Getter for variable resource.
         """
         return self._resource
 
@@ -59,7 +59,12 @@ class Pacemaker:
         Executes $ crm_resource followed by the command cmd and the
         arguments args on the resource _resource.
         """
-        command = ["crm", "resource"] + [cmd] + list(args) + [self._resource]
+        command = (
+            ["/usr/bin/crm", "resource"]
+            + [cmd]
+            + list(args)
+            + [self._resource]
+        )
         logger.info("Execute: " + (str(subprocess.list2cmdline(command))))
         subprocess.run(command, check=True)
 
@@ -85,7 +90,12 @@ class Pacemaker:
         """
         Bypasses the cluster and stop a resource on the local node.
         """
-        args = ["crm_resource", "--force-stop", "--resource", self._resource]
+        args = [
+            "/usr/bin/crm_resource",
+            "--force-stop",
+            "--resource",
+            self._resource,
+        ]
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
         subprocess.run(args, check=True)
 
@@ -100,7 +110,11 @@ class Pacemaker:
         """
         List node resources.
         """
-        args = ["crm", "resource", "list"]
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "list",
+        ]
         output_cmd = subprocess.run(args, check=True, capture_output=True)
         output = output_cmd.stdout.decode()
 
@@ -119,7 +133,11 @@ class Pacemaker:
         resources.
         """
         args = (
-            ["crm", "configure", "delete"]
+            [
+                "/usr/bin/crm",
+                "configure",
+                "delete",
+            ]
             + (["--force"] if force else [])
             + [self._resource]
         )
@@ -130,7 +148,11 @@ class Pacemaker:
         """
         Show Cluster Information Base for _resource.
         """
-        args = ["crm", "resource", "show"]
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "show",
+        ]
         output = subprocess.run(args, check=True, capture_output=True)
         output_list = output.stdout.decode("utf-8").split("\n")
 
@@ -146,7 +168,10 @@ class Pacemaker:
         """
         Show cluster status.
         """
-        subprocess.run(["crm", "status"], check=True)
+        subprocess.run(
+            ["/usr/bin/crm", "status"],
+            check=True,
+        )
 
     def add_vm(
         self,
@@ -163,16 +188,16 @@ class Pacemaker:
         """
         Add VM to Pacemaker cluster.
         """
-        is_managed = "is-managed=" + "'true'" if is_managed else "'false'"
+        is_managed = "is-managed=" + ("'true'" if is_managed else "'false'")
 
-        enable_force_stop = (
-            "force_stop=" + "'true'" if force_stop else "'false'"
+        enable_force_stop = "force_stop=" + (
+            "'true'" if force_stop else "'false'"
         )
 
         r_node = ["remote-node=" + remote_node] if remote_node != "" else []
 
         args = [
-            "crm",
+            "/usr/bin/crm",
             "configure",
             "primitive",
             self._resource,
@@ -181,10 +206,9 @@ class Pacemaker:
             "params",
             "config=" + xml,
             "hypervisor='qemu:///system'",
-            "migration_transport='ssh'",
             "seapath='{}'".format("true" if seapath_managed else "false"),
             "meta",
-            "allow-migrate='true'",
+            "allow-migrate='false'",
             is_managed,
             "op",
             "start",
@@ -201,27 +225,86 @@ class Pacemaker:
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
         subprocess.run(args, check=True)
 
-    def set_location(self, node):
+    def manage(self):
         """
-        Define on which nodes a resource must be run.
+        Manage a VM by Pacemaker.
+        """
+        subprocess.run(
+            ["/usr/bin/crm", "resource", "manage", self._resource], check=True
+        )
+
+    def disable_location(self, node):
+        """
+        Define on which nodes a resource must never be run.
         Note: It will be used to restrict the VM on the hypervisors.
-        TODO: NOT TESTED
         """
         args = [
-            "crm",
+            "/usr/bin/crm",
+            "resource",
+            "ban",
+            self._resource,
+            node,
+        ]
+
+        subprocess.run(args, check=True)
+
+    def pin_location(self, node):
+        """
+        Pin a VM on a node.
+        """
+        args = [
+            "/usr/bin/crm",
             "configure",
             "location",
-            "no-probe",
+            f"pin-{self._resource}-on{node}",
             self._resource,
-            "resource-discovery=never",
-            "-inf: " + str(node),
+            "resource-discovery=exclusive",
+            "inf:",
+            node,
+        ]
+
+        subprocess.run(args, check=True)
+
+    def add_colocation(self, *resources, strong=False):
+        """
+        Group a VM with other resources
+        """
+        if not resources:
+            raise Exception("At least one resource is needed")
+        args = [
+            "/usr/bin/crm",
+            "configure",
+            "colocation",
+            f"colocation-{'strong-' if strong else ''}{self._resource}"
+            f"-with{'-'.join(resources)}",
+            f"{'inf' if strong else '700'}:",
+            self._resource,
+            "(",
+        ]
+
+        args += resources
+        args.append(")")
+
+        subprocess.run(args, check=True)
+
+    def default_location(self, node):
+        """
+        Set the VM default location. The VM will be deployed on the given node
+        unless the node is up.
+        """
+        args = [
+            "/usr/bin/crm",
+            "resource",
+            "move",
+            self._resource,
+            node,
         ]
 
         subprocess.run(args, check=True)
 
     def wait_for(self, state, periods=0.2, nb_periods=100):
         """
-        Wait for a VM enter in the given state
+        Wait for a VM enter the given state.
         Check every period in s.
         """
         ticker = threading.Event()
@@ -230,3 +313,13 @@ class Pacemaker:
                 return
             nb_periods -= 1
         raise PacemakerException("Timeout")
+
+    @staticmethod
+    def is_valid_host(host):
+        """
+        Check if a host is found in the cluster.
+        :param host: the host to test
+        :return: True if the host is in the cluster, false otherwise
+        """
+        ret = subprocess.run(["/usr/bin/crm", "node", "status", host])
+        return ret.returncode == 0

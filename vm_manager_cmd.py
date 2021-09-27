@@ -76,6 +76,10 @@ if __name__ == "__main__":
         "get_metadata", help="Set metadata value"
     )
 
+    add_colocation_parser = subparsers.add_parser(
+        "add_colocation", help="Add a colocation constraint"
+    )
+
     for name, subparser in subparsers.choices.items():
         if name != "list":
             subparser.add_argument(
@@ -120,9 +124,30 @@ if __name__ == "__main__":
             nargs="+",
             action=ParseMetaData,
         )
+        p.add_argument(
+            "--pinned-host",
+            type=str,
+            required=False,
+            default=None,
+            help="Pin the VM on the given host",
+        )
+        p.add_argument(
+            "--preferred-host",
+            type=str,
+            required=False,
+            default=None,
+            help="Deploy the VM on the given host in priority",
+        )
 
     clone_parser.add_argument(
         "--dst_name", type=str, required=True, help="Destination VM name"
+    )
+
+    clone_parser.add_argument(
+        "--clear_constraint",
+        action="store_true",
+        required=False,
+        help="Do not keep location constraint",
     )
 
     clone_parser.add_argument(
@@ -179,6 +204,20 @@ if __name__ == "__main__":
         help="Metadata value to be stored",
     )
 
+    add_colocation_parser.add_argument(
+        "resources",
+        type=str,
+        nargs="+",
+        help="VMs or other Pacemaker resources to be colocated with the VM",
+    )
+
+    add_colocation_parser.add_argument(
+        "--strong",
+        action="store_true",
+        required=False,
+        help="Create a strong colocation constraint",
+    )
+
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -186,7 +225,7 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.WARNING)
     if args.command == "list":
-        print(vm_manager.list_vms())
+        print("\n".join(vm_manager.list_vms()))
     elif args.command == "start":
         vm_manager.start(args.name)
     elif args.command == "stop":
@@ -203,6 +242,8 @@ if __name__ == "__main__":
             enable=(not args.disable),
             force=args.force,
             metadata=args.metadata,
+            preferred_host=args.preferred_host,
+            pinned_host=args.pinned_host,
         )
     elif args.command == "clone":
         xml_data = None
@@ -216,6 +257,9 @@ if __name__ == "__main__":
             enable=(not args.disable),
             force=args.force,
             metadata=args.metadata,
+            preferred_host=args.preferred_host,
+            pinned_host=args.pinned_host,
+            clear_constraint=args.clear_constraint,
         )
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
@@ -240,4 +284,8 @@ if __name__ == "__main__":
     elif args.command == "set_metadata":
         vm_manager.set_metadata(
             args.name, args.metadata_name, args.metadata_value
+        )
+    elif args.command == "add_colocation":
+        vm_manager.add_colocation(
+            args.name, *args.resources, strong=args.strong
         )
