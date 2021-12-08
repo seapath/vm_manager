@@ -157,7 +157,10 @@ def _get_observer_host():
     parser = configparser.ConfigParser()
     with open("/etc/cluster.conf", "r") as fd:
         parser.read_file(fd)
-    return parser["machines"]["observer"]
+    if 'observer' in parser["machines"]:
+      return parser["machines"]["observer"]
+    else:
+      return None
 
 
 def list_vms(enabled=False):
@@ -318,7 +321,9 @@ def enable_vm(vm_name):
                 raise Exception(
                     "Could not add VM " + vm_name + " to the cluster"
                 )
-            p.disable_location(_get_observer_host())
+            observer = _get_observer_host()
+            if observer:
+              p.disable_location(observer)
             if pinned_host:
                 p.pin_location(pinned_host)
             elif preferred_host:
