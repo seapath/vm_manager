@@ -298,6 +298,7 @@ def enable_vm(vm_name):
             disk_name = OS_DISK_PREFIX + vm_name
             preferred_host = None
             pinned_host = None
+            live_migration = "false"
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
                     preferred_host = rbd.get_image_metadata(
@@ -311,11 +312,17 @@ def enable_vm(vm_name):
                     )
                 except KeyError:
                     pass
+                try:
+                    live_migration = rbd.get_image_metadata(
+                        disk_name, "live"
+                    )
+                except KeyError:
+                    pass
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
                 raise Exception(f"{preferred_host} is not valid hypervisor")
-            p.add_vm(xml_path, is_managed=False)
+            p.add_vm(xml_path, is_managed=False, live_migration = live_migration)
 
             if vm_name not in p.list_resources():
                 raise Exception(

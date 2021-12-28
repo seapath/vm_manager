@@ -184,6 +184,7 @@ class Pacemaker:
         force_stop=True,
         remote_node="",
         seapath_managed=True,
+        live_migration="false",
     ):
         """
         Add VM to Pacemaker cluster.
@@ -207,8 +208,9 @@ class Pacemaker:
             "config=" + xml,
             "hypervisor='qemu:///system'",
             "seapath='{}'".format("true" if seapath_managed else "false"),
+            "migration_transport=ssh",
             "meta",
-            "allow-migrate='false'",
+            "allow-migrate='"+ live_migration +"'",
             is_managed,
             "op",
             "start",
