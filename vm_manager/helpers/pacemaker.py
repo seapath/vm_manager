@@ -178,7 +178,7 @@ class Pacemaker:
         xml,
         start_timeout=120,
         stop_timeout=120,
-        monitor_timeout=30,
+        monitor_timeout=60,
         monitor_interval=10,
         is_managed=True,
         force_stop=True,
