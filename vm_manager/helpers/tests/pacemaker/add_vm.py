@@ -16,6 +16,8 @@ START_TIMEOUT = 120
 STOP_TIMEOUT = 120
 MONITOR_TIMEOUT = 60
 MONITOR_INTERVAL = 10
+MIGRATE_FROM_TIMEOUT = 60
+MIGRATE_TO_TIMEOUT = 120
 
 
 if __name__ == "__main__":
@@ -31,6 +33,8 @@ if __name__ == "__main__":
                 STOP_TIMEOUT,
                 MONITOR_TIMEOUT,
                 MONITOR_INTERVAL,
+                MIGRATE_FROM_TIMEOUT,
+                MIGRATE_TO_TIMEOUT,
                 seapath_managed=False,
             )
         except Exception as err:
