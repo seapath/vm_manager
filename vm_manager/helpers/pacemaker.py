@@ -60,7 +60,7 @@ class Pacemaker:
         arguments args on the resource _resource.
         """
         command = (
-            ["/usr/bin/crm", "resource"]
+            ["crm", "resource"]
             + [cmd]
             + list(args)
             + [self._resource]
@@ -91,7 +91,7 @@ class Pacemaker:
         Bypasses the cluster and stop a resource on the local node.
         """
         args = [
-            "/usr/bin/crm_resource",
+            "crm_resource",
             "--force-stop",
             "--resource",
             self._resource,
@@ -111,7 +111,7 @@ class Pacemaker:
         List node resources.
         """
         args = [
-            "/usr/bin/crm",
+            "crm",
             "resource",
             "list",
         ]
@@ -134,7 +134,7 @@ class Pacemaker:
         """
         args = (
             [
-                "/usr/bin/crm",
+                "crm",
                 "configure",
                 "delete",
             ]
@@ -149,7 +149,7 @@ class Pacemaker:
         Show Cluster Information Base for _resource.
         """
         args = [
-            "/usr/bin/crm",
+            "crm",
             "resource",
             "show",
         ]
@@ -169,7 +169,7 @@ class Pacemaker:
         Show cluster status.
         """
         subprocess.run(
-            ["/usr/bin/crm", "status"],
+            ["crm", "status"],
             check=True,
         )
 
@@ -200,7 +200,7 @@ class Pacemaker:
         r_node = ["remote-node=" + remote_node] if remote_node != "" else []
 
         args = [
-            "/usr/bin/crm",
+            "crm",
             "configure",
             "primitive",
             self._resource,
@@ -240,7 +240,7 @@ class Pacemaker:
         Manage a VM by Pacemaker.
         """
         subprocess.run(
-            ["/usr/bin/crm", "resource", "manage", self._resource], check=True
+            ["crm", "resource", "manage", self._resource], check=True
         )
 
     def disable_location(self, node):
@@ -249,7 +249,7 @@ class Pacemaker:
         Note: It will be used to restrict the VM on the hypervisors.
         """
         args = [
-            "/usr/bin/crm",
+            "crm",
             "resource",
             "ban",
             self._resource,
@@ -263,7 +263,7 @@ class Pacemaker:
         Pin a VM on a node.
         """
         args = [
-            "/usr/bin/crm",
+            "crm",
             "configure",
             "location",
             f"pin-{self._resource}-on{node}",
@@ -282,7 +282,7 @@ class Pacemaker:
         if not resources:
             raise Exception("At least one resource is needed")
         args = [
-            "/usr/bin/crm",
+            "crm",
             "configure",
             "colocation",
             f"colocation-{'strong-' if strong else ''}{self._resource}"
@@ -303,7 +303,7 @@ class Pacemaker:
         unless the node is up.
         """
         args = [
-            "/usr/bin/crm",
+            "crm",
             "resource",
             "move",
             self._resource,
@@ -331,5 +331,5 @@ class Pacemaker:
         :param host: the host to test
         :return: True if the host is in the cluster, false otherwise
         """
-        ret = subprocess.run(["/usr/bin/crm", "node", "status", host])
+        ret = subprocess.run(["crm", "node", "status", host])
         return ret.returncode == 0
