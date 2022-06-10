@@ -8,6 +8,10 @@ Helper module to manipulate libvirt
 import subprocess
 import libvirt
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class LibVirtManager:
     """
@@ -72,6 +76,20 @@ class LibVirtManager:
         """
         domain = self._conn.lookupByName(vm_name)
         domain.undefineFlags(libvirt.VIR_DOMAIN_UNDEFINE_NVRAM)
+
+    def start(self, vm_name):
+        """
+        Start a VM
+        :param vm_name: the VM to start
+        """
+        self._conn.lookupByName(vm_name).create()
+
+    def stop(self, vm_name):
+        """
+        Stop a VM
+        :param vm_name: the VM to be stopped
+        """
+        self._conn.lookupByName(vm_name).shutdown()
 
     @staticmethod
     def export_configuration(domain, xml_path):
