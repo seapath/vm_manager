@@ -370,7 +370,7 @@ def disable_vm(vm_name):
 
 def start(vm_name):
     """
-    Start or resume an stopped or paused VM
+    Start or resume a stopped or paused VM
     The VM must enabled before being started
     :param vm_name: the VM to be started
     """
