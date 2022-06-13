@@ -151,7 +151,7 @@ class Pacemaker:
         args = [
             "crm",
             "resource",
-            "show",
+            "status",
         ]
         output = subprocess.run(args, check=True, capture_output=True)
         output_list = output.stdout.decode("utf-8").split("\n")
