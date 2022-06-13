@@ -123,7 +123,7 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if line:
+            if 'ocf::heartbeat:VirtualDomain' in line:
                 resources += [line.split("\t")[0].strip()]
         return resources
 
@@ -157,11 +157,14 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if line:
-                resource, _, status = line.split("\t")
-                resource = resource.strip(" ")
-                if resource == self._resource:
-                    return status.split(" ")[0]
+            if 'ocf::heartbeat:VirtualDomain' in line:
+                try:
+                    resource, _, status = line.split("\t")
+                    resource = resource.strip(" ")
+                    if resource == self._resource:
+                        return status.lstrip().split(" ")[0]
+                except ValueError:
+                    pass
 
     @staticmethod
     def status():
