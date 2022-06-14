@@ -91,6 +91,37 @@ class LibVirtManager:
         """
         self._conn.lookupByName(vm_name).shutdown()
 
+    def status(self, vm_name):
+        """
+        Get the VM status
+        :param vm_name: the VM for which the status must be checked
+        :return:    the status of the VM, among Starting, Started, Paused,
+                    Stopped, Stopping, Undefined and FAILED
+        """
+        if vm_name not in self.list():
+            logger.info(vm_name + "does not exist")
+            return "Undefined"
+        else:
+            state = self._conn.lookupByName(vm_name).state()[0]
+            if state == libvirt.VIR_DOMAIN_NOSTATE:
+                return "Undefined"
+            elif state == libvirt.VIR_DOMAIN_RUNNING:
+                return "Started"
+            elif state == libvirt.VIR_DOMAIN_BLOCKED:
+                return "Paused"
+            elif state == libvirt.VIR_DOMAIN_PAUSED:
+                return "Paused"
+            elif state == libvirt.VIR_DOMAIN_SHUTDOWN:
+                return "Stopping"
+            elif state == libvirt.VIR_DOMAIN_SHUTOFF:
+                return "Stopped"
+            elif state == libvirt.VIR_DOMAIN_CRASHED:
+                return "FAILED"
+            elif state == libvirt.VIR_DOMAIN_PMSUSPENDED:
+                return "Paused"
+            else:
+                return "Undefined"
+
     @staticmethod
     def export_configuration(domain, xml_path):
         """

@@ -87,3 +87,14 @@ def stop(vm_name):
         lvm.stop(vm_name)
 
     logger.info("VM " + vm_name + " stopped")
+
+
+def status(vm_name):
+    """
+    Get the VM status
+    :param vm_name: the VM for which the status must be checked
+    :return:    the status of the VM, among Starting, Started, Paused,
+                Stopped, Stopping, Undefined and FAILED
+    """
+    with LibVirtManager() as lvm:
+        return lvm.status(vm_name)
