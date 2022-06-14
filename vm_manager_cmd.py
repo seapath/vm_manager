@@ -46,39 +46,40 @@ if __name__ == "__main__":
     subparsers.add_parser("remove", help="Remove a VM")
     subparsers.add_parser("start", help="Start a VM")
     subparsers.add_parser("stop", help="Stop a VM")
-    clone_parser = subparsers.add_parser("clone", help="Clone a VM")
-    subparsers.add_parser("disable", help="Disable a VM")
-    subparsers.add_parser("enable", help="Enable a VM")
     subparsers.add_parser("list", help="List all VMs")
     subparsers.add_parser("status", help="Print VM status")
-    create_snap_parser = subparsers.add_parser(
-        "create_snapshot", help="Create a VM snapshot"
-    )
-    remove_snap_parser = subparsers.add_parser(
-        "remove_snapshot", help="Remove a snapshot from a VM"
-    )
-    list_snaps_parser = subparsers.add_parser(
-        "list_snapshots", help="List all snapshots from a VM"
-    )
-    purge_parser = subparsers.add_parser(
-        "purge", help="Purge snapshots from a VM"
-    )
-    rollback_parser = subparsers.add_parser(
-        "rollback", help="Rollback a VM to a given snapshot"
-    )
-    list_md_parser = subparsers.add_parser(
-        "list_metadata", help="Lists all metadata from an image"
-    )
-    set_md_parser = subparsers.add_parser(
-        "set_metadata", help="Get metadata value"
-    )
-    get_md_parser = subparsers.add_parser(
-        "get_metadata", help="Set metadata value"
-    )
 
-    add_colocation_parser = subparsers.add_parser(
-        "add_colocation", help="Add a colocation constraint"
-    )
+    if vm_manager.cluster_mode:
+        clone_parser = subparsers.add_parser("clone", help="Clone a VM")
+        subparsers.add_parser("disable", help="Disable a VM")
+        subparsers.add_parser("enable", help="Enable a VM")
+        create_snap_parser = subparsers.add_parser(
+            "create_snapshot", help="Create a VM snapshot"
+        )
+        remove_snap_parser = subparsers.add_parser(
+            "remove_snapshot", help="Remove a snapshot from a VM"
+        )
+        list_snaps_parser = subparsers.add_parser(
+            "list_snapshots", help="List all snapshots from a VM"
+        )
+        purge_parser = subparsers.add_parser(
+            "purge", help="Purge snapshots from a VM"
+        )
+        rollback_parser = subparsers.add_parser(
+            "rollback", help="Rollback a VM to a given snapshot"
+        )
+        list_md_parser = subparsers.add_parser(
+            "list_metadata", help="Lists all metadata from an image"
+        )
+        set_md_parser = subparsers.add_parser(
+            "set_metadata", help="Get metadata value"
+        )
+        get_md_parser = subparsers.add_parser(
+            "get_metadata", help="Set metadata value"
+        )
+        add_colocation_parser = subparsers.add_parser(
+            "add_colocation", help="Add a colocation constraint"
+        )
 
     for name, subparser in subparsers.choices.items():
         if name != "list":
@@ -92,131 +93,141 @@ if __name__ == "__main__":
     create_parser.add_argument(
         "--xml", type=str, required=True, help="VM libvirt XML path"
     )
-    create_parser.add_argument(
-        "-i",
-        "--image",
-        type=str,
-        required=True,
-        help="VM image disk to import",
-    )
 
-    for p in [create_parser, clone_parser]:
-        p.add_argument(
-            "--disable",
-            action="store_true",
-            required=False,
-            help="Do not enable the VM after its creation",
-        )
-        p.add_argument(
-            "--force",
-            action="store_true",
-            required=False,
-            help="Force the VM creation and overwrites existing VM with the "
-            "same name",
-        )
-        p.add_argument(
-            "--metadata",
+    if vm_manager.cluster_mode:
+
+        create_parser.add_argument(
+            "-i",
+            "--image",
             type=str,
-            metavar="key=value",
+            required=True,
+            help="VM image disk to import",
+        )
+
+        for p in [create_parser, clone_parser]:
+            p.add_argument(
+                "--disable",
+                action="store_true",
+                required=False,
+                help="Do not enable the VM after its creation",
+            )
+            p.add_argument(
+                "--force",
+                action="store_true",
+                required=False,
+                help="Force the VM creation and overwrites existing VM with the "
+                "same name",
+            )
+            p.add_argument(
+                "--metadata",
+                type=str,
+                metavar="key=value",
+                required=False,
+                help="Set a number of key-value metadata pairs"
+                "(do not put spaces before or after the = sign)",
+                nargs="+",
+                action=ParseMetaData,
+            )
+            p.add_argument(
+                "--pinned-host",
+                type=str,
+                required=False,
+                default=None,
+                help="Pin the VM on the given host",
+            )
+            p.add_argument(
+                "--preferred-host",
+                type=str,
+                required=False,
+                default=None,
+                help="Deploy the VM on the given host in priority",
+            )
+
+        clone_parser.add_argument(
+            "--dst_name", type=str, required=True, help="Destination VM name"
+        )
+
+        clone_parser.add_argument(
+            "--clear_constraint",
+            action="store_true",
             required=False,
-            help="Set a number of key-value metadata pairs"
-            "(do not put spaces before or after the = sign)",
+            help="Do not keep location constraint",
+        )
+
+        clone_parser.add_argument(
+            "--xml", type=str, required=False, help="VM libvirt XML path"
+        )
+
+        create_snap_parser.add_argument(
+            "--snap_name",
+            type=str,
+            required=True,
+            help="Snapshot to be created",
+        )
+
+        remove_snap_parser.add_argument(
+            "--snap_name",
+            type=str,
+            required=True,
+            help="Snapshot to be removed",
+        )
+
+        purge_parser.add_argument(
+            "--date",
+            type=lambda s: datetime.datetime.strptime(s, "%d/%m/%Y %H:%M:%S"),
+            required=False,
+            help="Date until snapshots must be removed, i.e., 20/04/2021 14:02:32",
+        )
+
+        purge_parser.add_argument(
+            "--number",
+            type=int,
+            required=False,
+            help="Number of snapshots to delete starting from the oldest",
+        )
+
+        rollback_parser.add_argument(
+            "--snap_name",
+            type=str,
+            required=True,
+            help="Snapshot to be rollbacked",
+        )
+
+        get_md_parser.add_argument(
+            "--metadata_name",
+            type=str,
+            required=True,
+            help="Metadata name to be read",
+        )
+
+        set_md_parser.add_argument(
+            "--metadata_name",
+            type=str,
+            required=True,
+            help="Metadata name to be stored",
+        )
+
+        set_md_parser.add_argument(
+            "--metadata_value",
+            type=str,
+            required=True,
+            help="Metadata value to be stored",
+        )
+
+        add_colocation_parser.add_argument(
+            "resources",
+            type=str,
             nargs="+",
-            action=ParseMetaData,
+            help="VMs or other Pacemaker resources to be colocated with the VM",
         )
-        p.add_argument(
-            "--pinned-host",
-            type=str,
+
+        add_colocation_parser.add_argument(
+            "--strong",
+            action="store_true",
             required=False,
-            default=None,
-            help="Pin the VM on the given host",
+            help="Create a strong colocation constraint",
         )
-        p.add_argument(
-            "--preferred-host",
-            type=str,
-            required=False,
-            default=None,
-            help="Deploy the VM on the given host in priority",
-        )
-
-    clone_parser.add_argument(
-        "--dst_name", type=str, required=True, help="Destination VM name"
-    )
-
-    clone_parser.add_argument(
-        "--clear_constraint",
-        action="store_true",
-        required=False,
-        help="Do not keep location constraint",
-    )
-
-    clone_parser.add_argument(
-        "--xml", type=str, required=False, help="VM libvirt XML path"
-    )
-
-    create_snap_parser.add_argument(
-        "--snap_name", type=str, required=True, help="Snapshot to be created"
-    )
-
-    remove_snap_parser.add_argument(
-        "--snap_name", type=str, required=True, help="Snapshot to be removed"
-    )
-
-    purge_parser.add_argument(
-        "--date",
-        type=lambda s: datetime.datetime.strptime(s, "%d/%m/%Y %H:%M:%S"),
-        required=False,
-        help="Date until snapshots must be removed, i.e., 20/04/2021 14:02:32",
-    )
-
-    purge_parser.add_argument(
-        "--number",
-        type=int,
-        required=False,
-        help="Number of snapshots to delete starting from the oldest",
-    )
-
-    rollback_parser.add_argument(
-        "--snap_name",
-        type=str,
-        required=True,
-        help="Snapshot to be rollbacked",
-    )
-
-    get_md_parser.add_argument(
-        "--metadata_name",
-        type=str,
-        required=True,
-        help="Metadata name to be read",
-    )
-
-    set_md_parser.add_argument(
-        "--metadata_name",
-        type=str,
-        required=True,
-        help="Metadata name to be stored",
-    )
-
-    set_md_parser.add_argument(
-        "--metadata_value",
-        type=str,
-        required=True,
-        help="Metadata value to be stored",
-    )
-
-    add_colocation_parser.add_argument(
-        "resources",
-        type=str,
-        nargs="+",
-        help="VMs or other Pacemaker resources to be colocated with the VM",
-    )
-
-    add_colocation_parser.add_argument(
-        "--strong",
-        action="store_true",
-        required=False,
-        help="Create a strong colocation constraint",
-    )
+    # if cluster_mode end
 
     args = parser.parse_args()
     if args.verbose:
@@ -235,16 +246,19 @@ if __name__ == "__main__":
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             xml_data = xml.read()
-        vm_manager.create(
-            args.name,
-            xml_data,
-            args.image,
-            enable=(not args.disable),
-            force=args.force,
-            metadata=args.metadata,
-            preferred_host=args.preferred_host,
-            pinned_host=args.pinned_host,
-        )
+        if vm_manager.cluster_mode:
+            vm_manager.create(
+                args.name,
+                xml_data,
+                args.image,
+                enable=(not args.disable),
+                force=args.force,
+                metadata=args.metadata,
+                preferred_host=args.preferred_host,
+                pinned_host=args.pinned_host,
+            )
+        else:
+            vm_manager.create(args.name, xml_data)
     elif args.command == "clone":
         xml_data = None
         if args.xml:

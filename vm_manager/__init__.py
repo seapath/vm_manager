@@ -32,4 +32,11 @@ if cluster_mode:
         add_colocation,
     )
 else:
-    from .vm_manager_libvirt import list_vms, create, remove, start, stop
+    from .vm_manager_libvirt import (
+        list_vms,
+        create,
+        remove,
+        start,
+        stop,
+        status,
+    )
