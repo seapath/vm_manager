@@ -402,7 +402,7 @@ def is_enabled(vm_name):
 def status(vm_name):
     """
     Get the VM status
-    :param vm_name: the VM in which the status must be checked
+    :param vm_name: the VM for which the status must be checked
     :return: the status of the VM, among Starting, Started, Paused,
              Stopped, Stopping, Disabled, Undefined and FAILED
     """
