@@ -26,4 +26,4 @@ command='black -l 79 -t py38 --check .'
 command='black -l 79 -t py38 .'
 
 [flake]
-command='flake8'
+command='python3 -m flake8 --ignore=E501,W503'

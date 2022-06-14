@@ -59,12 +59,7 @@ class Pacemaker:
         Executes $ crm_resource followed by the command cmd and the
         arguments args on the resource _resource.
         """
-        command = (
-            ["crm", "resource"]
-            + [cmd]
-            + list(args)
-            + [self._resource]
-        )
+        command = ["crm", "resource"] + [cmd] + list(args) + [self._resource]
         logger.info("Execute: " + (str(subprocess.list2cmdline(command))))
         subprocess.run(command, check=True)
 
@@ -123,7 +118,7 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if 'ocf::heartbeat:VirtualDomain' in line:
+            if "ocf::heartbeat:VirtualDomain" in line:
                 resources += [line.split("\t")[0].strip()]
         return resources
 
@@ -157,7 +152,7 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if 'ocf::heartbeat:VirtualDomain' in line:
+            if "ocf::heartbeat:VirtualDomain" in line:
                 try:
                     resource, _, status = line.split("\t")
                     resource = resource.strip(" ")
@@ -215,7 +210,7 @@ class Pacemaker:
             "seapath='{}'".format("true" if seapath_managed else "false"),
             "migration_transport=ssh",
             "meta",
-            "allow-migrate='"+ live_migration +"'",
+            "allow-migrate='" + live_migration + "'",
             is_managed,
             "op",
             "start",

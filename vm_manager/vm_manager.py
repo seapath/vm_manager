@@ -157,10 +157,10 @@ def _get_observer_host():
     parser = configparser.ConfigParser()
     with open("/etc/cluster.conf", "r") as fd:
         parser.read_file(fd)
-    if 'observer' in parser["machines"]:
-      return parser["machines"]["observer"]
+    if "observer" in parser["machines"]:
+        return parser["machines"]["observer"]
     else:
-      return None
+        return None
 
 
 def list_vms(enabled=False):
@@ -313,16 +313,14 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
-                    live_migration = rbd.get_image_metadata(
-                        disk_name, "live"
-                    )
+                    live_migration = rbd.get_image_metadata(disk_name, "live")
                 except KeyError:
                     pass
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
                 raise Exception(f"{preferred_host} is not valid hypervisor")
-            p.add_vm(xml_path, is_managed=False, live_migration = live_migration)
+            p.add_vm(xml_path, is_managed=False, live_migration=live_migration)
 
             if vm_name not in p.list_resources():
                 raise Exception(
@@ -330,7 +328,7 @@ def enable_vm(vm_name):
                 )
             observer = _get_observer_host()
             if observer:
-              p.disable_location(observer)
+                p.disable_location(observer)
             if pinned_host:
                 p.pin_location(pinned_host)
             elif preferred_host:
