@@ -45,7 +45,7 @@ if __name__ == "__main__":
     create_parser = subparsers.add_parser("create", help="Create a new VM")
     subparsers.add_parser("remove", help="Remove a VM")
     subparsers.add_parser("start", help="Start a VM")
-    subparsers.add_parser("stop", help="Stop a VM")
+    stop_parser = subparsers.add_parser("stop", help="Stop a VM")
     subparsers.add_parser("list", help="List all VMs")
     subparsers.add_parser("status", help="Print VM status")
 
@@ -92,6 +92,13 @@ if __name__ == "__main__":
             )
     create_parser.add_argument(
         "--xml", type=str, required=True, help="VM libvirt XML path"
+    )
+    stop_parser.add_argument(
+        "-f",
+        "--force",
+        required=False,
+        action="store_true",
+        help="Force VM stop (virtual unplug) - not implemented yet for cluster mode",
     )
 
     if vm_manager.cluster_mode:
@@ -240,9 +247,9 @@ if __name__ == "__main__":
     elif args.command == "start":
         vm_manager.start(args.name)
     elif args.command == "stop":
-        vm_manager.stop(args.name)
+        vm_manager.stop(args.name, force=args.force)
     elif args.command == "remove":
-        vm_manager.remove(args.name)
+        vm_manager.remove(args.name, force=args.force)
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             xml_data = xml.read()

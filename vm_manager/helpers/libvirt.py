@@ -91,6 +91,13 @@ class LibVirtManager:
         """
         self._conn.lookupByName(vm_name).shutdown()
 
+    def force_stop(self, vm_name):
+        """
+        Forces a VM to stop
+        :param vm_name: the VM to be stopped
+        """
+        self._conn.lookupByName(vm_name).destroy()
+
     def status(self, vm_name):
         """
         Get the VM status

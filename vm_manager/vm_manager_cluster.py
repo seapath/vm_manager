@@ -417,7 +417,7 @@ def status(vm_name):
             return "Disabled"
 
 
-def stop(vm_name):
+def stop(vm_name, force=False):
     """
     Stop a VM
     :param vm_name: the VM to be stopped
@@ -428,6 +428,10 @@ def stop(vm_name):
             state = p.show()
             if state != "Stopped":
                 logger.info("Stop " + vm_name)
+                if force:
+                    logger.info(
+                        "The option --force isn't implemented yet for cluster mode"
+                    )
                 p.stop()
                 p.wait_for("Stopped")
                 logger.info("VM " + vm_name + " stopped")
