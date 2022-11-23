@@ -249,7 +249,7 @@ if __name__ == "__main__":
     elif args.command == "stop":
         vm_manager.stop(args.name, force=args.force)
     elif args.command == "remove":
-        vm_manager.remove(args.name, force=args.force)
+        vm_manager.remove(args.name)
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             xml_data = xml.read()
