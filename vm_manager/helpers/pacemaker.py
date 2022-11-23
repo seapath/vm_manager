@@ -210,7 +210,7 @@ class Pacemaker:
             "hypervisor='qemu:///system'",
             "seapath='{}'".format("true" if seapath_managed else "false"),
             "migration_transport=ssh",
-            "migration_user='"+ migration_user +"'",
+            "migration_user='" + migration_user + "'",
             "meta",
             "allow-migrate='" + live_migration + "'",
             is_managed,

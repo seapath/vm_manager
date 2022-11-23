@@ -320,16 +320,19 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
-                    live_migration = rbd.get_image_metadata(
-                        disk_name, "live"
-                    )
+                    live_migration = rbd.get_image_metadata(disk_name, "live")
                 except KeyError:
                     pass
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
                 raise Exception(f"{preferred_host} is not valid hypervisor")
-            p.add_vm(xml_path, is_managed=False, live_migration = live_migration, migration_user = migration_user)
+            p.add_vm(
+                xml_path,
+                is_managed=False,
+                live_migration=live_migration,
+                migration_user=migration_user,
+            )
 
             if vm_name not in p.list_resources():
                 raise Exception(
