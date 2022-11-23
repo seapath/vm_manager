@@ -315,7 +315,7 @@ def enable_vm(vm_name):
                     pass
                 try:
                     migration_user = rbd.get_image_metadata(
-                        disk_name, "migration_user"
+                        disk_name, "migrationUser"
                     )
                 except KeyError:
                     pass
