@@ -59,7 +59,7 @@ class Pacemaker:
         Executes $ crm_resource followed by the command cmd and the
         arguments args on the resource _resource.
         """
-        command = ["crm", "resource"] + [cmd] + list(args) + [self._resource]
+        command = ["pcs", "resource"] + [cmd] + list(args) + [self._resource]
         logger.info("Execute: " + (str(subprocess.list2cmdline(command))))
         subprocess.run(command, check=True)
 
@@ -67,13 +67,13 @@ class Pacemaker:
         """
         Starts resource and anything that depends on it.
         """
-        self._run_crm_resource("start")
+        self._run_crm_resource("enable")
 
     def stop(self):
         """
         Stops resource and anything that depends on it.
         """
-        self._run_crm_resource("stop")
+        self._run_crm_resource("disable")
 
     def restart(self):
         """
@@ -106,9 +106,9 @@ class Pacemaker:
         List node resources.
         """
         args = [
-            "crm",
+            "pcs",
             "resource",
-            "list",
+            "status",
         ]
         output_cmd = subprocess.run(args, check=True, capture_output=True)
         output = output_cmd.stdout.decode()
@@ -118,8 +118,8 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if "ocf::heartbeat:VirtualDomain" in line:
-                resources += [line.split("\t")[0].strip()]
+            if "ocf:seapath:VirtualDomainSeapath" in line:
+                resources += [line.split("\t")[0].strip().replace("*", "").replace(" ", "").strip()]
         return resources
 
     def delete(self, force=False):
@@ -129,11 +129,11 @@ class Pacemaker:
         """
         args = (
             [
-                "crm",
-                "configure",
+                "pcs",
+                "resource",
                 "delete",
             ]
-            + (["--force"] if force else [])
+            #+ (["--force"] if force else [])
             + [self._resource]
         )
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
@@ -144,7 +144,7 @@ class Pacemaker:
         Show Cluster Information Base for _resource.
         """
         args = [
-            "crm",
+            "pcs",
             "resource",
             "status",
         ]
@@ -152,10 +152,11 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if "ocf::heartbeat:VirtualDomain" in line:
+            if "ocf:seapath:VirtualDomainSeapath" in line:
                 try:
                     resource, _, status = line.split("\t")
-                    resource = resource.strip(" ")
+                    status = status.split()[0]
+                    resource = resource.strip().replace("*", "").replace(" ", "").strip()
                     if resource == self._resource:
                         return status.lstrip().split(" ")[0]
                 except ValueError:
@@ -167,7 +168,7 @@ class Pacemaker:
         Show cluster status.
         """
         subprocess.run(
-            ["crm", "status"],
+            ["pcs", "status"],
             check=True,
         )
 
@@ -190,46 +191,45 @@ class Pacemaker:
         """
         Add VM to Pacemaker cluster.
         """
-        is_managed = "is-managed=" + ("'true'" if is_managed else "'false'")
+        is_managed = "is-managed=" + ("true" if is_managed else "false")
 
         enable_force_stop = "force_stop=" + (
-            "'true'" if force_stop else "'false'"
+            "true" if force_stop else "false"
         )
 
         r_node = ["remote-node=" + remote_node] if remote_node != "" else []
 
         args = [
-            "crm",
-            "configure",
-            "primitive",
+            "pcs",
+            "resource",
+            "create",
             self._resource,
-            "ocf:heartbeat:VirtualDomain",
+            "ocf:seapath:VirtualDomainSeapath",
             enable_force_stop,
-            "params",
             "config=" + xml,
-            "hypervisor='qemu:///system'",
-            "seapath='{}'".format("true" if seapath_managed else "false"),
+            "hypervisor=qemu:///system",
+            "seapath={}".format("true" if seapath_managed else "false"),
             "migration_transport=ssh",
-            "migration_user='"+ migration_user +"'",
+            "migration_user="+ migration_user +"",
             "meta",
-            "allow-migrate='" + live_migration + "'",
+            "allow-migrate=" + live_migration + "",
             is_managed,
             "op",
             "start",
-            "timeout='" + str(start_timeout) + "'",
+            "timeout=" + str(start_timeout) + "",
             "op",
             "stop",
-            "timeout='" + str(stop_timeout) + "'",
+            "timeout=" + str(stop_timeout) + "",
             "op",
             "migrate_from",
-            "timeout='" + str(migrate_from_timeout) + "'",
+            "timeout=" + str(migrate_from_timeout) + "",
             "op",
             "migrate_to",
-            "timeout='" + str(migrate_to_timeout) + "'",
+            "timeout=" + str(migrate_to_timeout) + "",
             "op",
             "monitor",
-            "timeout='" + str(monitor_timeout) + "'",
-            "interval='" + str(monitor_interval) + "'",
+            "timeout=" + str(monitor_timeout) + "",
+            "interval=" + str(monitor_interval) + "",
         ] + r_node
 
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
@@ -240,7 +240,7 @@ class Pacemaker:
         Manage a VM by Pacemaker.
         """
         subprocess.run(
-            ["crm", "resource", "manage", self._resource], check=True
+            ["pcs", "resource", "manage", self._resource], check=True
         )
 
     def disable_location(self, node):
@@ -249,7 +249,7 @@ class Pacemaker:
         Note: It will be used to restrict the VM on the hypervisors.
         """
         args = [
-            "crm",
+            "pcs",
             "resource",
             "ban",
             self._resource,
@@ -263,7 +263,7 @@ class Pacemaker:
         Pin a VM on a node.
         """
         args = [
-            "crm",
+            "pcs",
             "configure",
             "location",
             f"pin-{self._resource}-on{node}",
@@ -303,7 +303,7 @@ class Pacemaker:
         unless the node is up.
         """
         args = [
-            "crm",
+            "pcs",
             "resource",
             "move",
             self._resource,

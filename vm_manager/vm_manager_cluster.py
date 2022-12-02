@@ -357,7 +357,6 @@ def disable_vm(vm_name):
     :param vm_name: the VM name to be disabled
     """
     with Pacemaker(vm_name) as p:
-
         if vm_name in p.list_resources():
             if p.show() != "Stopped":
                 logger.info("VM " + vm_name + " is running, force delete")
