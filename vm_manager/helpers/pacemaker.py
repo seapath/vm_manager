@@ -118,7 +118,7 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if "ocf::heartbeat:VirtualDomain" in line:
+            if "ocf::seapath:VirtualDomain" in line:
                 resources += [line.split("\t")[0].strip()]
         return resources
 
@@ -152,7 +152,7 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if "ocf::heartbeat:VirtualDomain" in line:
+            if "ocf::seapath:VirtualDomain" in line:
                 try:
                     resource, _, status = line.split("\t")
                     resource = resource.strip(" ")
@@ -203,7 +203,7 @@ class Pacemaker:
             "configure",
             "primitive",
             self._resource,
-            "ocf:heartbeat:VirtualDomain",
+            "ocf:seapath:VirtualDomain",
             enable_force_stop,
             "params",
             "config=" + xml,
