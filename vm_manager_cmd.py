@@ -149,6 +149,19 @@ if __name__ == "__main__":
                 default=None,
                 help="Deploy the VM on the given host in priority",
             )
+            p.add_argument(
+                "--enable-live-migration",
+                action="store_true",
+                required=False,
+                help="Enables live migration for the VM"
+            )
+            p.add_argument(
+                "--migration-user",
+                type=str,
+                required=False,
+                default=None,
+                help="Sets the user used for live migration",
+            )
 
         clone_parser.add_argument(
             "--dst_name", type=str, required=True, help="Destination VM name"
@@ -263,6 +276,8 @@ if __name__ == "__main__":
                 metadata=args.metadata,
                 preferred_host=args.preferred_host,
                 pinned_host=args.pinned_host,
+                live_migration=args.enable_live_migration,
+                migration_user=args.migration_user,
             )
         else:
             vm_manager.create(args.name, xml_data)
@@ -280,6 +295,8 @@ if __name__ == "__main__":
             metadata=args.metadata,
             preferred_host=args.preferred_host,
             pinned_host=args.pinned_host,
+            live_migration=args.enable_live_migration,
+            migration_user=args.migration_user,
             clear_constraint=args.clear_constraint,
         )
     elif args.command == "disable":
