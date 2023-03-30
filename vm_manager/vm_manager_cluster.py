@@ -110,7 +110,7 @@ def _create_xml(xml, vm_name):
 
 
 def _configure_vm(
-    vm_name, base_xml, enable, metadata, preferred_host, pinned_host
+    vm_name, base_xml, enable, metadata, preferred_host, pinned_host, live_migration, migration_user
 ):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
@@ -128,6 +128,10 @@ def _configure_vm(
         rbd.set_image_metadata(disk_name, "vm_name", vm_name)
         rbd.set_image_metadata(disk_name, "xml", xml)
         rbd.set_image_metadata(disk_name, "_base_xml", base_xml)
+        if live_migration:
+            rbd.set_image_metadata(disk_name, "_live_migration", "true")
+        if migration_user:
+            rbd.set_image_metadata(disk_name, "_migration_user", migration_user)
         if pinned_host:
             rbd.set_image_metadata(disk_name, "_pinned_host", pinned_host)
         elif preferred_host:
@@ -185,6 +189,8 @@ def create(
     metadata=None,
     preferred_host=None,
     pinned_host=None,
+    live_migration=False,
+    migration_user=None,
 ):
     """
     Create a new VM
@@ -243,6 +249,8 @@ def create(
                 metadata,
                 preferred_host,
                 pinned_host,
+                live_migration,
+                migration_user,
             )
 
         except Exception as err:
@@ -314,13 +322,15 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
-                    migration_user = rbd.get_image_metadata(
-                        disk_name, "migrationUser"
-                    )
+                    live_migration_str = rbd.get_image_metadata(disk_name, "_live_migration")
+                    if live_migration_str == "true":
+                        live_migration = "true"
                 except KeyError:
                     pass
                 try:
-                    live_migration = rbd.get_image_metadata(disk_name, "live")
+                    migration_user = rbd.get_image_metadata(
+                        disk_name, "_migration_user"
+                    )
                 except KeyError:
                     pass
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
@@ -462,6 +472,8 @@ def clone(
     metadata=None,
     preferred_host=None,
     pinned_host=None,
+    live_migration=None,
+    migration_user=None,
     clear_constraint=False,
 ):
     """
@@ -474,6 +486,8 @@ def clone(
     :param metadata: metadata to add to the VM
     :param preferred_host: the host in which the VM will be deployed by
     default. This will replace source preferred_host and pinned_host.
+    :param live_migration: true if the vm is allowed to migrate live
+    :param migration_user: name of the user used for live migration
     :param pinned_host: the host in  which the VM will be deployed.
     The VM will never switch to another host. This will replace source
     preferred_host and pinned_host.
@@ -550,6 +564,8 @@ def clone(
                 metadata,
                 preferred_host,
                 pinned_host,
+                live_migration,
+                migration_user,
             )
 
         except Exception as err:
