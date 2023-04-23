@@ -20,7 +20,7 @@ if __name__ == "__main__":
         if state == "Started":
             print("Stop " + VM_NAME)
             p.stop()
-            p.wait_for("Stopped")
+            p.wait_for("Stopped (disabled)")
             print("VM " + VM_NAME + " stopped")
 
         else:

@@ -157,7 +157,7 @@ class Pacemaker:
                     resource, _, status = line.split("\t")
                     resource = resource.strip(" ")
                     if resource == self._resource:
-                        return status.lstrip().split(" ")[0]
+                        return status.lstrip()
                 except ValueError:
                     pass
 
