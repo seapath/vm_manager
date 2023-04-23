@@ -372,7 +372,7 @@ def disable_vm(vm_name):
     with Pacemaker(vm_name) as p:
 
         if vm_name in p.list_resources():
-            if p.show() != "Stopped":
+            if p.show().split(" ")[0] != "Stopped":
                 logger.info("VM " + vm_name + " is running, force delete")
                 p.delete(True)
             else:
@@ -448,14 +448,14 @@ def stop(vm_name, force=False):
 
         if vm_name in p.list_resources():
             state = p.show()
-            if state != "Stopped":
+            if state != "Stopped (disabled)":
                 logger.info("Stop " + vm_name)
                 if force:
                     logger.info(
                         "The option --force isn't implemented yet for cluster mode"
                     )
                 p.stop()
-                p.wait_for("Stopped")
+                p.wait_for("Stopped (disabled)")
                 logger.info("VM " + vm_name + " stopped")
             else:
                 logger.info("VM " + vm_name + " is already stopped")
