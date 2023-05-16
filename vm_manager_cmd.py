@@ -163,7 +163,7 @@ if __name__ == "__main__":
                 help="Sets the user used for live migration",
             )
             p.add_argument(
-                "--migration-from-timeout",
+                "--migrate-to-timeout",
                 type=str,
                 required=False,
                 default=None,
@@ -285,7 +285,7 @@ if __name__ == "__main__":
                 pinned_host=args.pinned_host,
                 live_migration=args.enable_live_migration,
                 migration_user=args.migration_user,
-                migration_from_timeout=args.migration_from_timeout,
+                migrate_to_timeout=args.migrate_to_timeout,
             )
         else:
             vm_manager.create(args.name, xml_data)
@@ -305,7 +305,7 @@ if __name__ == "__main__":
             pinned_host=args.pinned_host,
             live_migration=args.enable_live_migration,
             migration_user=args.migration_user,
-            migration_from_timeout=args.migration_from_timeout,
+            migrate_to_timeout=args.migrate_to_timeout,
             clear_constraint=args.clear_constraint,
         )
     elif args.command == "disable":

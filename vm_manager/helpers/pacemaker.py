@@ -178,7 +178,7 @@ class Pacemaker:
         stop_timeout=15,
         monitor_timeout=60,
         monitor_interval=10,
-        migrate_from_timeout=120,
+        migrate_from_timeout=60,
         migrate_to_timeout=120,
         is_managed=True,
         force_stop=False,
