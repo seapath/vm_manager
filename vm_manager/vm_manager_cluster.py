@@ -110,7 +110,7 @@ def _create_xml(xml, vm_name):
 
 
 def _configure_vm(
-    vm_name, base_xml, enable, metadata, preferred_host, pinned_host, live_migration, migration_user, migration_from_timeout
+    vm_name, base_xml, enable, metadata, preferred_host, pinned_host, live_migration, migration_user, migrate_to_timeout
 ):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
@@ -132,8 +132,8 @@ def _configure_vm(
             rbd.set_image_metadata(disk_name, "_live_migration", "true")
         if migration_user:
             rbd.set_image_metadata(disk_name, "_migration_user", migration_user)
-        if migration_from_timeout:
-            rbd.set_image_metadata(disk_name, "_migration_from_timeout", migration_from_timeout)
+        if migrate_to_timeout:
+            rbd.set_image_metadata(disk_name, "_migrate_to_timeout", migrate_to_timeout)
         if pinned_host:
             rbd.set_image_metadata(disk_name, "_pinned_host", pinned_host)
         elif preferred_host:
@@ -193,7 +193,7 @@ def create(
     pinned_host=None,
     live_migration=False,
     migration_user=None,
-    migration_from_timeout=None,
+    migrate_to_timeout=None,
 ):
     """
     Create a new VM
@@ -254,7 +254,7 @@ def create(
                 pinned_host,
                 live_migration,
                 migration_user,
-                migration_from_timeout,
+                migrate_to_timeout,
             )
 
         except Exception as err:
@@ -312,7 +312,7 @@ def enable_vm(vm_name):
             pinned_host = None
             live_migration = "false"
             migration_user = "root"
-            migration_from_timeout = "120"
+            migrate_to_timeout = "120"
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
                     preferred_host = rbd.get_image_metadata(
@@ -339,8 +339,8 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
-                    migration_from_timeout = rbd.get_image_metadata(
-                        disk_name, "_migration_from_timeout"
+                    migrate_to_timeout = rbd.get_image_metadata(
+                        disk_name, "_migrate_to_timeout"
                     )
                 except KeyError:
                     pass
@@ -353,7 +353,7 @@ def enable_vm(vm_name):
                 is_managed=False,
                 live_migration=live_migration,
                 migration_user=migration_user,
-                migrate_from_timeout=migration_from_timeout,
+                migrate_to_timeout=migrate_to_timeout,
             )
 
             if vm_name not in p.list_resources():
@@ -486,7 +486,7 @@ def clone(
     pinned_host=None,
     live_migration=None,
     migration_user=None,
-    migration_from_timeout=None,
+    migrate_to_timeout=None,
     clear_constraint=False,
 ):
     """
@@ -501,7 +501,7 @@ def clone(
     default. This will replace source preferred_host and pinned_host.
     :param live_migration: true if the vm is allowed to migrate live
     :param migration_user: name of the user used for live migration
-    :param migration_from_timeout: timeout used for live migration
+    :param migrate_to_timeout: timeout used for live migration
     :param pinned_host: the host in  which the VM will be deployed.
     The VM will never switch to another host. This will replace source
     preferred_host and pinned_host.
@@ -580,7 +580,7 @@ def clone(
                 pinned_host,
                 live_migration,
                 migration_user,
-                migration_from_timeout,
+                migrate_to_timeout,
             )
 
         except Exception as err:
