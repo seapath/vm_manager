@@ -8,6 +8,7 @@ Helper module to manipulate Pacemaker.
 import subprocess
 import logging
 import threading
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +109,7 @@ class Pacemaker:
         args = [
             "crm",
             "resource",
-            "list",
+            "status",
         ]
         output_cmd = subprocess.run(args, check=True, capture_output=True)
         output = output_cmd.stdout.decode()
@@ -118,8 +119,8 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if "ocf::seapath:VirtualDomain" in line:
-                resources += [line.split("\t")[0].strip()]
+            if re.match(r".*ocf::?seapath:VirtualDomain.*",line):
+                resources += [line.split("\t")[0].replace("*","").replace(" ","")]
         return resources
 
     def delete(self, force=False):
@@ -152,10 +153,10 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if "ocf::seapath:VirtualDomain" in line:
+            if re.match(r".*ocf::?seapath:VirtualDomain.*",line):
                 try:
                     resource, _, status = line.split("\t")
-                    resource = resource.strip(" ")
+                    resource = resource.replace("*","").replace(" ","")
                     if resource == self._resource:
                         return status.lstrip()
                 except ValueError:
@@ -331,5 +332,7 @@ class Pacemaker:
         :param host: the host to test
         :return: True if the host is in the cluster, false otherwise
         """
-        ret = subprocess.run(["crm", "node", "status", host])
+        command = "bash -c \"grep -E '^" + host + "$' <(crm node server)\""
+        ret = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
+        ret.wait()
         return ret.returncode == 0
