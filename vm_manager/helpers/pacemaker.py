@@ -325,6 +325,18 @@ class Pacemaker:
             nb_periods -= 1
         raise PacemakerException("Timeout")
 
+    def run_crm_cmd(self, cmd):
+        """
+        Run a crm configure command
+        """
+        args = [
+            "crm",
+            "configure",
+        ]
+        args.extend(cmd.split(" "))
+
+        subprocess.run(args, check=True)
+
     @staticmethod
     def is_valid_host(host):
         """

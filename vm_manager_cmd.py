@@ -169,6 +169,13 @@ if __name__ == "__main__":
                 default=None,
                 help="Sets the timeout in seconds for live migration (default 120)",
             )
+            p.add_argument(
+                '--add-crm-config-cmd',
+                action='append',
+                required=False,
+                default=None,
+                help='Sets a crm configure command to run when enabling this guest',
+            )
 
         clone_parser.add_argument(
             "--dst_name", type=str, required=True, help="Destination VM name"
@@ -286,6 +293,7 @@ if __name__ == "__main__":
                 live_migration=args.enable_live_migration,
                 migration_user=args.migration_user,
                 migrate_to_timeout=args.migrate_to_timeout,
+                crm_config_cmd=args.add_crm_config_cmd,
             )
         else:
             vm_manager.create(args.name, xml_data)
