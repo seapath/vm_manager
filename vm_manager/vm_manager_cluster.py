@@ -110,7 +110,7 @@ def _create_xml(xml, vm_name):
 
 
 def _configure_vm(
-    vm_name, base_xml, enable, metadata, preferred_host, pinned_host, live_migration, migration_user, migrate_to_timeout
+    vm_name, base_xml, enable, metadata, preferred_host, pinned_host, live_migration, migration_user, migrate_to_timeout, crm_config_cmd
 ):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
@@ -140,6 +140,9 @@ def _configure_vm(
             rbd.set_image_metadata(
                 disk_name, "_preferred_host", preferred_host
             )
+        if crm_config_cmd:
+            crm_config_cmd_multiline = """{}""".format("\n".join(crm_config_cmd))
+            rbd.set_image_metadata(disk_name, "_crm_config_cmd", crm_config_cmd_multiline)    
         if metadata:
             for name, data in metadata.items():
                 rbd.set_image_metadata(disk_name, name, data)
@@ -194,6 +197,7 @@ def create(
     live_migration=False,
     migration_user=None,
     migrate_to_timeout=None,
+    crm_config_cmd=None,
 ):
     """
     Create a new VM
@@ -255,6 +259,7 @@ def create(
                 live_migration,
                 migration_user,
                 migrate_to_timeout,
+                crm_config_cmd,
             )
 
         except Exception as err:
@@ -310,6 +315,7 @@ def enable_vm(vm_name):
             disk_name = OS_DISK_PREFIX + vm_name
             preferred_host = None
             pinned_host = None
+            crm_config_cmd = None
             live_migration = "false"
             migration_user = "root"
             migrate_to_timeout = "120"
@@ -344,6 +350,13 @@ def enable_vm(vm_name):
                     )
                 except KeyError:
                     pass
+                try:
+                    crm_config_cmd_multi = rbd.get_image_metadata(
+                        disk_name, "_crm_config_cmd"
+                    )
+                    crm_config_cmd = crm_config_cmd_multi.split('\n')
+                except KeyError:
+                    pass
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
@@ -367,6 +380,9 @@ def enable_vm(vm_name):
                 p.pin_location(pinned_host)
             elif preferred_host:
                 p.default_location(preferred_host)
+            if crm_config_cmd:
+                for cmd in crm_config_cmd:
+                    p.run_crm_cmd(cmd)
             p.manage()
             p.wait_for("Started")
 
@@ -488,6 +504,7 @@ def clone(
     migration_user=None,
     migrate_to_timeout=None,
     clear_constraint=False,
+    crm_config_cmd=None,
 ):
     """
     Create a new VM from another
@@ -581,6 +598,7 @@ def clone(
                 live_migration,
                 migration_user,
                 migrate_to_timeout,
+                crm_config_cmd,
             )
 
         except Exception as err:
