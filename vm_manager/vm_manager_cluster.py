@@ -142,7 +142,7 @@ def _configure_vm(
             )
         if crm_config_cmd:
             crm_config_cmd_multiline = """{}""".format("\n".join(crm_config_cmd))
-            rbd.set_image_metadata(disk_name, "_crm_config_cmd", crm_config_cmd_multiline)    
+            rbd.set_image_metadata(disk_name, "_crm_config_cmd", crm_config_cmd_multiline)
         if metadata:
             for name, data in metadata.items():
                 rbd.set_image_metadata(disk_name, name, data)
