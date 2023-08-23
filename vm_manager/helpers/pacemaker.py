@@ -329,6 +329,10 @@ class Pacemaker:
         """
         Run a crm configure command
         """
+        # Do not run empty command otherwise crm enter in crm configure
+        # interactive mode and block the execution
+        if not cmd:
+            return
         args = [
             "crm",
             "configure",
