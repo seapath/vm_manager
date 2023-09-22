@@ -111,11 +111,11 @@ class Pacemaker:
             "resource",
             "status",
         ]
-        output_cmd = subprocess.run(args, check=True, capture_output=True)
+        output_cmd = subprocess.run(args, check=False, capture_output=True)
         output = output_cmd.stdout.decode()
 
         resources = []
-        if "NO resources configured" in output:
+        if "NO resources configured" in output or "No resources" in output:
             return resources
 
         for line in output.split("\n"):
