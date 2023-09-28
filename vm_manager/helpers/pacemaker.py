@@ -123,11 +123,22 @@ class Pacemaker:
                 resources += [line.split("\t")[0].replace("*","").replace(" ","")]
         return resources
 
-    def delete(self, force=False):
+    def delete(self, force=False, clean=False):
         """
         Deletes one or more objects. Use force parameter to delete started
         resources.
         """
+        if clean:
+            args = (
+                [
+                    "crm",
+                    "resource",
+                    "clean",
+                ]
+            )
+            logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
+            subprocess.run(args, check=True)
+
         args = (
             [
                 "crm",
