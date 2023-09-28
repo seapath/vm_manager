@@ -400,12 +400,15 @@ def disable_vm(vm_name):
     with Pacemaker(vm_name) as p:
 
         if vm_name in p.list_resources():
-            if p.show().split(" ")[0] != "Stopped":
+            if p.show().split(" ")[0] == "FAILED":
+                logger.info("VM " + vm_name + " is in FAILED state, clean and force delete")
+                p.delete(force=True, clean=True)
+            elif p.show().split(" ")[0] != "Stopped":
                 logger.info("VM " + vm_name + " is running, force delete")
-                p.delete(True)
+                p.delete(force=True, clean=False)
             else:
                 logger.info("VM " + vm_name + " is stopped, delete")
-                p.delete()
+                p.delete(force=False, clean=False)
 
             if vm_name in p.list_resources():
                 raise Exception(
