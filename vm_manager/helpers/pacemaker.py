@@ -187,7 +187,7 @@ class Pacemaker:
         self,
         xml,
         start_timeout=120,
-        stop_timeout=25,
+        stop_timeout=30,
         monitor_timeout=60,
         monitor_interval=10,
         migrate_from_timeout=60,
