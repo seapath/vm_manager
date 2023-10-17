@@ -163,6 +163,13 @@ if __name__ == "__main__":
                 help="Sets the user used for live migration",
             )
             p.add_argument(
+                "--stop-timeout",
+                type=str,
+                required=False,
+                default=None,
+                help="Sets the timeout in seconds for stopping a guest (default 30)",
+            )
+            p.add_argument(
                 "--migrate-to-timeout",
                 type=str,
                 required=False,
@@ -292,6 +299,7 @@ if __name__ == "__main__":
                 pinned_host=args.pinned_host,
                 live_migration=args.enable_live_migration,
                 migration_user=args.migration_user,
+                stop_timeout=args.stop_timeout,
                 migrate_to_timeout=args.migrate_to_timeout,
                 crm_config_cmd=args.add_crm_config_cmd,
             )
@@ -313,6 +321,7 @@ if __name__ == "__main__":
             pinned_host=args.pinned_host,
             live_migration=args.enable_live_migration,
             migration_user=args.migration_user,
+            stop_timeout=args.stop_timeout,
             migrate_to_timeout=args.migrate_to_timeout,
             clear_constraint=args.clear_constraint,
         )
