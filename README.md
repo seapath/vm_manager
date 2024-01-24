@@ -4,7 +4,7 @@
 
 The purpose of this tool is to easily manage Virtual Machines (VM) on a Hypervisor.
 This tool allows to:
-- manage VM on standalone serveur with KVM
+- manage VM on a standalone server with KVM
 - manage VM on a cluster with Pacemaker (running on top of KVM)
 
 This tool takes as input VM image (qcow2) and configuration (libvirt XML file)
