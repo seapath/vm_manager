@@ -7,7 +7,7 @@ setup(
     name="vm_manager",
     version="0.1",
     packages=find_packages(),
-    url="https://g1.sfl.team/plugins/gitiles/rte/votp/vm_manager",
+    url="https://github.com/seapath/vm_manager",
     author="RTE",
     license="Apache License 2.0",
     author_email="mathieu.dupre@savoirfairelinux.com",
