@@ -12,12 +12,12 @@ from vm_manager.helpers.pacemaker import Pacemaker
 VM_NAME = "vm1"
 VM_XML = "/usr/share/testdata/vm.xml"
 
-START_TIMEOUT = 120
-STOP_TIMEOUT = 30
-MONITOR_TIMEOUT = 60
-MONITOR_INTERVAL = 10
-MIGRATE_FROM_TIMEOUT = 60
-MIGRATE_TO_TIMEOUT = 120
+START_TIMEOUT = "120"
+STOP_TIMEOUT = "30"
+MONITOR_TIMEOUT = "60"
+MONITOR_INTERVAL = "10"
+MIGRATE_FROM_TIMEOUT = "60"
+MIGRATE_TO_TIMEOUT = "120"
 
 
 if __name__ == "__main__":
@@ -27,16 +27,17 @@ if __name__ == "__main__":
         print("Resource list: " + str(p.list_resources()))
         print("Add VM to cluster")
         try:
-            p.add_vm(
-                VM_XML,
-                START_TIMEOUT,
-                STOP_TIMEOUT,
-                MONITOR_TIMEOUT,
-                MONITOR_INTERVAL,
-                MIGRATE_FROM_TIMEOUT,
-                MIGRATE_TO_TIMEOUT,
-                seapath_managed=False,
-            )
+            vm_options = {
+                "xml": VM_XML,
+                "start_timeout": START_TIMEOUT,
+                "stop_timeout": STOP_TIMEOUT,
+                "monitor_timeout": MONITOR_TIMEOUT,
+                "monitor_interval": MONITOR_INTERVAL,
+                "migrate_from_timeout": MIGRATE_FROM_TIMEOUT,
+                "migrate_to_timeout": MIGRATE_TO_TIMEOUT,
+                "seapath_managed": False,
+            }
+            p.add_vm(vm_options)
         except Exception as err:
             raise Exception(
                 "Could not add VM " + VM_NAME + " to Pacemaker: " + str(err)

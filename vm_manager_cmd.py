@@ -115,12 +115,14 @@ if __name__ == "__main__":
             p.add_argument(
                 "--disable",
                 action="store_true",
+                default=None,
                 required=False,
                 help="Do not enable the VM after its creation",
             )
             p.add_argument(
                 "--force",
                 action="store_true",
+                default=None,
                 required=False,
                 help="Force the VM creation and overwrites existing VM with the "
                 "same name",
@@ -182,6 +184,12 @@ if __name__ == "__main__":
                 required=False,
                 default=None,
                 help='Sets a crm configure command to run when enabling this guest',
+            )
+            p.add_argument(
+                '--priority',
+                required=False,
+                default=None,
+                help='Sets a priority for this guest',
             )
 
         clone_parser.add_argument(
@@ -286,45 +294,16 @@ if __name__ == "__main__":
         vm_manager.remove(args.name)
     elif args.command == "create":
         with open(args.xml, "r") as xml:
-            xml_data = xml.read()
-        if vm_manager.cluster_mode:
-            vm_manager.create(
-                args.name,
-                xml_data,
-                args.image,
-                enable=(not args.disable),
-                force=args.force,
-                metadata=args.metadata,
-                preferred_host=args.preferred_host,
-                pinned_host=args.pinned_host,
-                live_migration=args.enable_live_migration,
-                migration_user=args.migration_user,
-                stop_timeout=args.stop_timeout,
-                migrate_to_timeout=args.migrate_to_timeout,
-                crm_config_cmd=args.add_crm_config_cmd,
-            )
-        else:
-            vm_manager.create(args.name, xml_data)
+            args.base_xml = xml.read()
+        args.live_migration = args.enable_live_migration
+        vm_manager.create(vars(args))
     elif args.command == "clone":
-        xml_data = None
+        args.base_xml = None
         if args.xml:
             with open(args.xml, "r") as xml:
-                xml_data = xml.read()
-        vm_manager.clone(
-            args.name,
-            args.dst_name,
-            base_xml=xml_data,
-            enable=(not args.disable),
-            force=args.force,
-            metadata=args.metadata,
-            preferred_host=args.preferred_host,
-            pinned_host=args.pinned_host,
-            live_migration=args.enable_live_migration,
-            migration_user=args.migration_user,
-            stop_timeout=args.stop_timeout,
-            migrate_to_timeout=args.migrate_to_timeout,
-            clear_constraint=args.clear_constraint,
-        )
+                args.base_xml = xml.read()
+        args.live_migration = args.enable_live_migration
+        vm_manager.clone(vars(args))
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
     elif args.command == "enable":
