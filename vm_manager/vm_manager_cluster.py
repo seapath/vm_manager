@@ -138,8 +138,8 @@ def _configure_vm( vm_options ):
             rbd.set_image_metadata(disk_name, "_pinned_host", vm_options["pinned_host"])
         elif "preferred_host" in vm_options:
             rbd.set_image_metadata(disk_name, "_preferred_host", vm_options["preferred_host"])
-        if "add_crm_config_cmd" in vm_options:
-            vm_options["crm_config_cmd_multiline"] = """{}""".format("\n".join(vm_options["add_crm_config_cmd"]))
+        if "crm_config_cmd" in vm_options:
+            vm_options["crm_config_cmd_multiline"] = """{}""".format("\n".join(vm_options["crm_config_cmd"]))
             rbd.set_image_metadata(disk_name, "_crm_config_cmd", vm_options["crm_config_cmd_multiline"])
         if "priority" in vm_options:
             rbd.set_image_metadata(disk_name, "_priority", vm_options["priority"])

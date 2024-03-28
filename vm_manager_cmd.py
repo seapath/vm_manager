@@ -296,6 +296,7 @@ if __name__ == "__main__":
         with open(args.xml, "r") as xml:
             args.base_xml = xml.read()
         args.live_migration = args.enable_live_migration
+        args.crm_config_cmd = args.add_crm_config_cmd
         vm_manager.create(vars(args))
     elif args.command == "clone":
         args.base_xml = None
@@ -303,6 +304,7 @@ if __name__ == "__main__":
             with open(args.xml, "r") as xml:
                 args.base_xml = xml.read()
         args.live_migration = args.enable_live_migration
+        args.crm_config_cmd = args.add_crm_config_cmd
         vm_manager.clone(vars(args))
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
