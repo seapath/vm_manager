@@ -155,7 +155,7 @@ def _configure_vm( vm_options ):
     logger.info("libvirt xml config defined for VM " + vm_options["name"])
 
     # Enable on Pacemaker
-    if "disable" not in vm_options or ("disable" in vm_options and not vm_options["disable"]):
+    if "enable" not in vm_options or ("enable" in vm_options and vm_options["enable"]):
         enable_vm(vm_options["name"])
 
 
