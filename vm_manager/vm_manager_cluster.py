@@ -134,6 +134,8 @@ def _configure_vm( vm_options ):
             rbd.set_image_metadata(disk_name, "_stop_timeout", vm_options["stop_timeout"])
         if "migrate_to_timeout" in vm_options:
             rbd.set_image_metadata(disk_name, "_migrate_to_timeout", vm_options["migrate_to_timeout"])
+        if "migration_downtime" in vm_options:
+            rbd.set_image_metadata(disk_name, "_migration_downtime", vm_options["migration_downtime"])
         if "pinned_host" in vm_options:
             rbd.set_image_metadata(disk_name, "_pinned_host", vm_options["pinned_host"])
         elif "preferred_host" in vm_options:
@@ -294,6 +296,7 @@ def enable_vm(vm_name):
             migration_user = "root"
             stop_timeout = "30"
             migrate_to_timeout = "120"
+            migration_downtime = "0"
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
                     preferred_host = rbd.get_image_metadata(
@@ -332,6 +335,12 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
+                    migration_downtime = rbd.get_image_metadata(
+                        disk_name, "_migration_downtime"
+                    )
+                except KeyError:
+                    pass
+                try:
                     crm_config_cmd_multi = rbd.get_image_metadata(
                         disk_name, "_crm_config_cmd"
                     )
@@ -356,6 +365,7 @@ def enable_vm(vm_name):
                 "monitor_interval": "10",
                 "migrate_from_timeout": "60",
                 "migrate_to_timeout": migrate_to_timeout,
+                "migration_downtime": migration_downtime,
                 "is_managed": False,
                 "force_stop": False,
                 "seapath_managed": True,

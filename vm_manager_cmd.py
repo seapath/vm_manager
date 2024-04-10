@@ -179,6 +179,13 @@ if __name__ == "__main__":
                 help="Sets the timeout in seconds for live migration (default 120)",
             )
             p.add_argument(
+                "--migration-downtime",
+                type=str,
+                required=False,
+                default=None,
+                help="Sets the allowed downtime for live migration in ms (default 0)",
+            )
+            p.add_argument(
                 '--add-crm-config-cmd',
                 action='append',
                 required=False,
