@@ -1,4 +1,5 @@
 # Copyright (C) 2021, RTE (http://www.rte-france.com)
+# Copyright (C) 2024 Savoir-faire Linux Inc.
 # SPDX-License-Identifier: Apache-2.0
 
 """
@@ -222,6 +223,25 @@ class Pacemaker:
             "timeout='" + vm_options.get("monitor_timeout", "60") + "'",
             "interval='" + vm_options.get("monitor_interval", "10") + "'",
         ]
+        if vm_options.get("pacemaker_remote"):
+            args += [
+                "meta",
+                "remote-node='" + vm_options["pacemaker_remote"] + "'",
+            ]
+            if vm_options.get("pacemaker_remote_addr"):
+                args += [
+                    "remote-addr='" + vm_options["pacemaker_remote_addr"] + "'"
+                ]
+            if vm_options.get("pacemaker_remote_port"):
+                args += [
+                    "remote-port='" + vm_options["pacemaker_remote_port"] + "'"
+                ]
+            if vm_options.get("pacemaker_remote_timeout"):
+                args += [
+                    "remote-connect-timeout='"
+                    + vm_options["pacemaker_remote_timeout"]
+                    + "'"
+                ]
 
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
         subprocess.run(args, check=True)
@@ -328,6 +348,39 @@ class Pacemaker:
             "configure",
         ]
         args.extend(cmd.split(" "))
+
+        subprocess.run(args, check=True)
+
+    def add_meta(self, key, value):
+        """
+        Add a meta to the resource
+        :param meta: the meta to add
+        """
+        args = [
+            "crm",
+            "resource",
+            "meta",
+            self._resource,
+            "set",
+            key,
+            value
+        ]
+
+        subprocess.run(args, check=True)
+
+    def remove_meta(self, key):
+        """
+        Remove a meta from the resource
+        :param meta: the meta to remove
+        """
+        args = [
+            "crm",
+            "resource",
+            "meta",
+            self._resource,
+            "delete",
+            key,
+        ]
 
         subprocess.run(args, check=True)
 

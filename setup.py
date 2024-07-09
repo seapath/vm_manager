@@ -13,7 +13,7 @@ setup(
     author_email="mathieu.dupre@savoirfairelinux.com",
     description="Managed VMs in Seapath cluster",
     include_package_data=True,
-    install_requires=["flask","Flask-WTF"],
+    install_requires=["flask", "Flask-WTF"],
     scripts=[
         "vm_manager/helpers/libvirt_cmd.py",
         "vm_manager/helpers/tests/pacemaker/add_vm.py",

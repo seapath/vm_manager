@@ -1,4 +1,5 @@
 # Copyright (C) 2021, RTE (http://www.rte-france.com)
+# Copyright (C) 2024 Savoir-faire Linux Inc.
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -297,6 +298,11 @@ def enable_vm(vm_name):
             stop_timeout = "30"
             migrate_to_timeout = "120"
             migration_downtime = "0"
+            remote_node = None
+            remote_node_address = None
+            remote_node_port = None
+            remote_node_timeout = None
+
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
                     preferred_host = rbd.get_image_metadata(
@@ -353,6 +359,31 @@ def enable_vm(vm_name):
                     )
                 except KeyError:
                     pass
+                try:
+                    remote_node = rbd.get_image_metadata(
+                        disk_name, "_remote_node"
+                    )
+                except KeyError:
+                    pass
+                try:
+                    remote_node_address = rbd.get_image_metadata(
+                        disk_name, "_remote_node_address"
+                    )
+                except KeyError:
+                    pass
+                try:
+                    remote_node_port = rbd.get_image_metadata(
+                        disk_name, "_remote_node_port"
+                    )
+                except KeyError:
+                    pass
+                try:
+                    remote_node_timeout = rbd.get_image_metadata(
+                        disk_name, "_remote_node_timeout"
+                    )
+                except KeyError:
+                    pass
+
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
@@ -372,6 +403,10 @@ def enable_vm(vm_name):
                 "live_migration": live_migration,
                 "migration_user": migration_user,
                 "priority": priority,
+                "pacemaker_remote": remote_node,
+                "pacemaker_remote_addr": remote_node_address,
+                "pacemaker_remote_port": remote_node_port,
+                "pacemaker_remote_timeout": remote_node_timeout,
             }
             p.add_vm(
                 vm_options
@@ -517,7 +552,7 @@ def clone(vm_options_with_nones):
 
     _check_name(dst_vm_name)
 
-    if metadata in vm_options:
+    if "metadata" in vm_options:
         if not isinstance(vm_options["metadata"], dict):
             raise ValueError("metadata parameter must be a dictionary")
 
@@ -808,3 +843,63 @@ def add_colocation(vm_name, *resources, strong=False):
     _check_name(vm_name)
     with Pacemaker(vm_name) as p:
         p.add_colocation(*resources, strong=strong)
+
+def remove_pacemaker_remote(vm_name):
+    """
+    Remove the pacemaker remote configuration from the VM.
+    :param vm_name: the VM name to remove the pacemaker remote configuration
+    """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        try:
+            rbd.remove_image_metadata(disk_name, "_remote_node")
+            rbd.remove_image_metadata(disk_name, "_remote_node_address")
+            rbd.remove_image_metadata(disk_name, "_remote_node_port")
+            rbd.remove_image_metadata(disk_name, "_remote_node_timeout")
+        except KeyError:
+            pass
+    with Pacemaker(vm_name) as p:
+        p.remove_meta("remote-node")
+        p.remove_meta("remote-addr")
+        p.remove_meta("remote-port")
+        p.remove_meta("remote-connect-timeout")
+
+
+def add_pacemaker_remote(
+    vm_name,
+    remote_node,
+    remote_node_address,
+    remote_node_port=None,
+    remote_node_timeout=None,
+):
+    """
+    Add a pacemaker-remote configuration to the VM.
+    :param vm_name: the VM name to add the pacemaker remote configuration
+    :param remote_node: name to identify the pacemaker-remote resource
+    :param remote_node_address: the address of the pacemaker-remote resource
+    :param remote_node_port: the port of the pacemaker-remote resource
+    :param remote_node_timeout: the timeout of the pacemaker-remote resource
+    """
+
+    _check_name(remote_node)
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        rbd.set_image_metadata(disk_name, "_remote_node", remote_node)
+        rbd.set_image_metadata(
+            disk_name, "_remote_node_address", remote_node_address
+        )
+        if remote_node_port:
+            rbd.set_image_metadata(
+                disk_name, "_remote_node_port", remote_node_port
+            )
+        if remote_node_timeout:
+            rbd.set_image_metadata(
+                disk_name, "_remote_node_timeout", remote_node_timeout
+            )
+    with Pacemaker(vm_name) as p:
+        if remote_node_port:
+            p.add_meta("remote-port", remote_node_port)
+        if remote_node_timeout:
+            p.add_meta("remote-connect-timeout", remote_node_timeout)
+        p.add_meta("remote-addr", remote_node_address)
+        p.add_meta("remote-node", remote_node)

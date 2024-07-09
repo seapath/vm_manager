@@ -30,6 +30,8 @@ if cluster_mode:
         get_metadata,
         set_metadata,
         add_colocation,
+        remove_pacemaker_remote,
+        add_pacemaker_remote,
     )
 else:
     from .vm_manager_libvirt import (

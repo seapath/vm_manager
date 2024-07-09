@@ -80,6 +80,12 @@ if __name__ == "__main__":
         add_colocation_parser = subparsers.add_parser(
             "add_colocation", help="Add a colocation constraint"
         )
+        add_pacemaker_remote_parser = subparsers.add_parser(
+            "add_pacemaker_remote", help="Add a pacemaker-remote resource for the VM"
+        )
+        remove_pacemaker_remote_parser = subparsers.add_parser(
+            "remove_pacemaker_remote", help="Remove a pacemaker-remote resource for the VM"
+        )
 
     for name, subparser in subparsers.choices.items():
         if name != "list":
@@ -283,6 +289,33 @@ if __name__ == "__main__":
             required=False,
             help="Create a strong colocation constraint",
         )
+
+        add_pacemaker_remote_parser.add_argument(
+            "--remote_name",
+            type=str,
+            required=True,
+            help="Pacemaker remote resource name"
+        )
+        add_pacemaker_remote_parser.add_argument(
+            "--remote_address",
+            type=str,
+            required=True,
+            help="Pacemaker remote resource address or hostname"
+        )
+        add_pacemaker_remote_parser.add_argument(
+            "--remote_port",
+            type=str,
+            required=False,
+            help="Pacemaker remote resource port"
+        )
+        add_pacemaker_remote_parser.add_argument(
+            "--remote_timeout",
+            type=str,
+            required=False,
+            help="Pacemaker remote resource start timeout"
+        )
+
+
     # if cluster_mode end
 
     args = parser.parse_args()
@@ -344,4 +377,14 @@ if __name__ == "__main__":
     elif args.command == "add_colocation":
         vm_manager.add_colocation(
             args.name, *args.resources, strong=args.strong
+        )
+    elif args.command == "remove_pacemaker_remote":
+        vm_manager.remove_pacemaker_remote(args.name)
+    elif args.command == "add_pacemaker_remote":
+        vm_manager.add_pacemaker_remote(
+            args.name,
+            args.remote_name,
+            args.remote_address,
+            remote_node_port=args.remote_port,
+            remote_node_timeout=args.remote_timeout,
         )
