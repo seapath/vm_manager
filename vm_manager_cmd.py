@@ -106,7 +106,8 @@ if __name__ == "__main__":
         "--force",
         required=False,
         action="store_true",
-        help="Force VM stop (virtual unplug) - not implemented yet for cluster mode",
+        help="Force VM stop (virtual unplug) - not implemented yet for cluster"
+        " mode",
     )
 
     if vm_manager.cluster_mode:
@@ -132,8 +133,8 @@ if __name__ == "__main__":
                 action="store_true",
                 default=None,
                 required=False,
-                help="Force the VM creation and overwrites existing VM with the "
-                "same name",
+                help="Force the VM creation and overwrites existing VM with "
+                "the same name",
             )
             p.add_argument(
                 "--metadata",
@@ -177,28 +178,32 @@ if __name__ == "__main__":
                 type=str,
                 required=False,
                 default=None,
-                help="Sets the timeout in seconds for stopping a guest (default 30)",
+                help="Sets the timeout in seconds for stopping a guest "
+                "(default 30)",
             )
             p.add_argument(
                 "--migrate-to-timeout",
                 type=str,
                 required=False,
                 default=None,
-                help="Sets the timeout in seconds for live migration (default 120)",
+                help="Sets the timeout in seconds for live migration "
+                "(default 120)",
             )
             p.add_argument(
                 "--migration-downtime",
                 type=str,
                 required=False,
                 default=None,
-                help="Sets the allowed downtime for live migration in ms (default 0)",
+                help="Sets the allowed downtime for live migration in ms "
+                "(default 0)",
             )
             p.add_argument(
                 "--add-crm-config-cmd",
                 action="append",
                 required=False,
                 default=None,
-                help="Sets a crm configure command to run when enabling this guest",
+                help="Sets a crm configure command to run when enabling this "
+                "guest",
             )
             p.add_argument(
                 "--priority",
@@ -240,7 +245,8 @@ if __name__ == "__main__":
             "--date",
             type=lambda s: datetime.datetime.strptime(s, "%d/%m/%Y %H:%M:%S"),
             required=False,
-            help="Date until snapshots must be removed, i.e., 20/04/2021 14:02:32",
+            help="Date until snapshots must be removed, i.e., 20/04/2021 "
+            "14:02:32",
         )
 
         purge_parser.add_argument(
@@ -282,7 +288,8 @@ if __name__ == "__main__":
             "resources",
             type=str,
             nargs="+",
-            help="VMs or other Pacemaker resources to be colocated with the VM",
+            help="VMs or other Pacemaker resources to be colocated with the "
+            "VM",
         )
 
         add_colocation_parser.add_argument(

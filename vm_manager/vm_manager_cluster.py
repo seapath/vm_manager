@@ -564,7 +564,8 @@ def stop(vm_name, force=False):
                 logger.info("Stop " + vm_name)
                 if force:
                     logger.info(
-                        "The option --force isn't implemented yet for cluster mode"
+                        "The option --force isn't implemented yet for cluster "
+                        "mode"
                     )
                 p.stop()
                 p.wait_for("Stopped (disabled)")

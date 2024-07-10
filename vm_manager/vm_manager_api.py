@@ -1,11 +1,10 @@
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
+import vm_manager as v
 
 app = Flask(__name__)
 csrf = CSRFProtect()
 csrf.init_app(app)
-
-import vm_manager as v
 
 
 def execfunc(func, guest):
