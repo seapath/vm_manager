@@ -183,10 +183,7 @@ class Pacemaker:
             check=True,
         )
 
-    def add_vm(
-        self,
-        vm_options,
-    ):
+    def add_vm(self, vm_options):
         """
         Add VM to Pacemaker cluster.
         """
@@ -197,33 +194,33 @@ class Pacemaker:
             self._resource,
             "ocf:seapath:VirtualDomain",
             "params",
-            "force_stop=" + (str(vm_options["force_stop"]).lower() if "force_stop" in vm_options else "false"),
-            "migration_downtime=" + (str(vm_options["migration_downtime"]) if "migration_downtime" in vm_options else "0"),
+            "force_stop=" + str(vm_options.get("force_stop", False)).lower(),
+            "migration_downtime=" + str(vm_options.get("migration_downtime", 0)),
             "config=" + vm_options["xml"],
             "hypervisor='qemu:///system'",
-            "seapath='{}'".format(str(vm_options["seapath_managed"]).lower() if "seapath_managed" in vm_options else "false"),
+            "seapath='{}'".format(str(vm_options.get("seapath_managed", False)).lower()),
             "migration_transport=ssh",
-            "migration_user='" + ( vm_options["migration_user"] if "migration_user" in vm_options else "root") + "'",
+            "migration_user='" + vm_options.get("migration_user", "root") + "'",
             "meta",
-            "allow-migrate='" + ( str(vm_options["live_migration"]).lower() if "live_migration" in vm_options else "false") + "'",
-            "is-managed=" + ( str(vm_options["is_managed"]).lower() if "is_managed" in vm_options else "true" ),
-            "priority='" + ( vm_options["priority"] if "priority" in vm_options else "0" ) + "'",
+            "allow-migrate='" + str(vm_options.get("live_migration", False)).lower() + "'",
+            "is-managed=" + str(vm_options.get("is_managed", True)).lower(),
+            "priority='" + vm_options.get("priority", "0") + "'",
             "op",
             "start",
-            "timeout='" + ( vm_options["start_timeout"] if "start_timeout" in vm_options else "120") + "'",
+            "timeout='" + vm_options.get("start_timeout", "120") + "'",
             "op",
             "stop",
-            "timeout='" + ( vm_options["stop_timeout"] if "stop_timeout" in vm_options else "30" )+ "'",
+            "timeout='" + vm_options.get("stop_timeout", "30") + "'",
             "op",
             "migrate_from",
-            "timeout='" + ( vm_options["migrate_from_timeout"] if "migrate_from_timeout" in vm_options else "60" ) + "'",
+            "timeout='" + vm_options.get("migrate_from_timeout", "60") + "'",
             "op",
             "migrate_to",
-            "timeout='" + ( vm_options["migrate_to_timeout"] if "migrate_to_timeout" in vm_options else "120" ) + "'",
+            "timeout='" + vm_options.get("migrate_to_timeout", "120") + "'",
             "op",
             "monitor",
-            "timeout='" + ( vm_options["monitor_timeout"] if "monitor_timeout" in vm_options else "60" ) + "'",
-            "interval='" + ( vm_options["monitor_interval"] if "monitor_interval" in vm_options else "10" ) + "'",
+            "timeout='" + vm_options.get("monitor_timeout", "60") + "'",
+            "interval='" + vm_options.get("monitor_interval", "10") + "'",
         ]
 
         logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
