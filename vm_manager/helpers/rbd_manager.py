@@ -144,7 +144,7 @@ class RbdManager:
         if not isinstance(size, int):
             unit_list = ["B", "K", "M", "G", "T"]
             i = unit_list.index(size[-1])
-            size = int(size[:-1]) * 1024 ** i
+            size = int(size[:-1]) * 1024**i
 
         if self.image_exists(img):
             if overwrite:

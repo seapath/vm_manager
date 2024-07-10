@@ -120,8 +120,10 @@ class Pacemaker:
             return resources
 
         for line in output.split("\n"):
-            if re.match(r".*ocf::?seapath:VirtualDomain.*",line):
-                resources += [line.split("\t")[0].replace("*","").replace(" ","")]
+            if re.match(r".*ocf::?seapath:VirtualDomain.*", line):
+                resources += [
+                    line.split("\t")[0].replace("*", "").replace(" ", "")
+                ]
         return resources
 
     def delete(self, force=False, clean=False):
@@ -130,13 +132,11 @@ class Pacemaker:
         resources.
         """
         if clean:
-            args = (
-                [
-                    "crm",
-                    "resource",
-                    "clean",
-                ]
-            )
+            args = [
+                "crm",
+                "resource",
+                "clean",
+            ]
             logger.info("Execute: " + (str(subprocess.list2cmdline(args))))
             subprocess.run(args, check=True)
 
@@ -165,10 +165,10 @@ class Pacemaker:
         output_list = output.stdout.decode("utf-8").split("\n")
 
         for line in output_list:
-            if re.match(r".*ocf::?seapath:VirtualDomain.*",line):
+            if re.match(r".*ocf::?seapath:VirtualDomain.*", line):
                 try:
                     resource, _, status = line.split("\t")
-                    resource = resource.replace("*","").replace(" ","")
+                    resource = resource.replace("*", "").replace(" ", "")
                     if resource == self._resource:
                         return status.lstrip()
                 except ValueError:
@@ -196,14 +196,21 @@ class Pacemaker:
             "ocf:seapath:VirtualDomain",
             "params",
             "force_stop=" + str(vm_options.get("force_stop", False)).lower(),
-            "migration_downtime=" + str(vm_options.get("migration_downtime", 0)),
+            "migration_downtime="
+            + str(vm_options.get("migration_downtime", 0)),
             "config=" + vm_options["xml"],
             "hypervisor='qemu:///system'",
-            "seapath='{}'".format(str(vm_options.get("seapath_managed", False)).lower()),
+            "seapath='{}'".format(
+                str(vm_options.get("seapath_managed", False)).lower()
+            ),
             "migration_transport=ssh",
-            "migration_user='" + vm_options.get("migration_user", "root") + "'",
+            "migration_user='"
+            + vm_options.get("migration_user", "root")
+            + "'",
             "meta",
-            "allow-migrate='" + str(vm_options.get("live_migration", False)).lower() + "'",
+            "allow-migrate='"
+            + str(vm_options.get("live_migration", False)).lower()
+            + "'",
             "is-managed=" + str(vm_options.get("is_managed", True)).lower(),
             "priority='" + vm_options.get("priority", "0") + "'",
             "op",
@@ -356,15 +363,7 @@ class Pacemaker:
         Add a meta to the resource
         :param meta: the meta to add
         """
-        args = [
-            "crm",
-            "resource",
-            "meta",
-            self._resource,
-            "set",
-            key,
-            value
-        ]
+        args = ["crm", "resource", "meta", self._resource, "set", key, value]
 
         subprocess.run(args, check=True)
 

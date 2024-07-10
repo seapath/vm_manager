@@ -38,7 +38,7 @@ if __name__ == "__main__":
                 print(vm)
     elif args.command == "secrets":
         with LibVirtManager() as libvirt_manager:
-            for (name, value) in libvirt_manager.get_virsh_secrets().items():
+            for name, value in libvirt_manager.get_virsh_secrets().items():
                 print("{}: {}".format(name, value))
     elif args.command == "define":
         with open(args.xml, "r") as f:
