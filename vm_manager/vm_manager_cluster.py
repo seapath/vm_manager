@@ -110,7 +110,7 @@ def _create_xml(xml, vm_name):
     return ElementTree.tostring(xml_root).decode()
 
 
-def _configure_vm( vm_options ):
+def _configure_vm(vm_options):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
     configuration and add it on Pacemaker if enable is set to True.
@@ -122,7 +122,9 @@ def _configure_vm( vm_options ):
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         disk_name = OS_DISK_PREFIX + vm_options["name"]
         rbd.add_image_to_group(disk_name, vm_options["name"])
-        logger.info("Image " + disk_name + " added to group " + vm_options["name"])
+        logger.info(
+            "Image " + disk_name + " added to group " + vm_options["name"]
+        )
 
         rbd.set_image_metadata(disk_name, "vm_name", vm_options["name"])
         rbd.set_image_metadata(disk_name, "xml", xml)
@@ -130,22 +132,46 @@ def _configure_vm( vm_options ):
         if "live_migration" in vm_options:
             rbd.set_image_metadata(disk_name, "_live_migration", "true")
         if "migration_user" in vm_options:
-            rbd.set_image_metadata(disk_name, "_migration_user", vm_options["migration_user"])
+            rbd.set_image_metadata(
+                disk_name, "_migration_user", vm_options["migration_user"]
+            )
         if "stop_timeout" in vm_options:
-            rbd.set_image_metadata(disk_name, "_stop_timeout", vm_options["stop_timeout"])
+            rbd.set_image_metadata(
+                disk_name, "_stop_timeout", vm_options["stop_timeout"]
+            )
         if "migrate_to_timeout" in vm_options:
-            rbd.set_image_metadata(disk_name, "_migrate_to_timeout", vm_options["migrate_to_timeout"])
+            rbd.set_image_metadata(
+                disk_name,
+                "_migrate_to_timeout",
+                vm_options["migrate_to_timeout"],
+            )
         if "migration_downtime" in vm_options:
-            rbd.set_image_metadata(disk_name, "_migration_downtime", vm_options["migration_downtime"])
+            rbd.set_image_metadata(
+                disk_name,
+                "_migration_downtime",
+                vm_options["migration_downtime"],
+            )
         if "pinned_host" in vm_options:
-            rbd.set_image_metadata(disk_name, "_pinned_host", vm_options["pinned_host"])
+            rbd.set_image_metadata(
+                disk_name, "_pinned_host", vm_options["pinned_host"]
+            )
         elif "preferred_host" in vm_options:
-            rbd.set_image_metadata(disk_name, "_preferred_host", vm_options["preferred_host"])
+            rbd.set_image_metadata(
+                disk_name, "_preferred_host", vm_options["preferred_host"]
+            )
         if "crm_config_cmd" in vm_options:
-            vm_options["crm_config_cmd_multiline"] = """{}""".format("\n".join(vm_options["crm_config_cmd"]))
-            rbd.set_image_metadata(disk_name, "_crm_config_cmd", vm_options["crm_config_cmd_multiline"])
+            vm_options["crm_config_cmd_multiline"] = """{}""".format(
+                "\n".join(vm_options["crm_config_cmd"])
+            )
+            rbd.set_image_metadata(
+                disk_name,
+                "_crm_config_cmd",
+                vm_options["crm_config_cmd_multiline"],
+            )
         if "priority" in vm_options:
-            rbd.set_image_metadata(disk_name, "_priority", vm_options["priority"])
+            rbd.set_image_metadata(
+                disk_name, "_priority", vm_options["priority"]
+            )
         if "metadata" in vm_options:
             for name, data in vm_options["metadata"].items():
                 rbd.set_image_metadata(disk_name, name, data)
@@ -158,7 +184,9 @@ def _configure_vm( vm_options ):
     logger.info("libvirt xml config defined for VM " + vm_options["name"])
 
     # Enable on Pacemaker
-    if "enable" not in vm_options or ("enable" in vm_options and vm_options["enable"]):
+    if "enable" not in vm_options or (
+        "enable" in vm_options and vm_options["enable"]
+    ):
         enable_vm(vm_options["name"])
 
 
@@ -194,7 +222,9 @@ def create(vm_options_with_nones):
     The VM will never switch to another host
     """
     # Validate parameters and required files
-    vm_options = {k: v for k, v in vm_options_with_nones.items() if v is not None}
+    vm_options = {
+        k: v for k, v in vm_options_with_nones.items() if v is not None
+    }
     _check_name(vm_options["name"])
 
     if "metadata" in vm_options:
@@ -208,10 +238,14 @@ def create(vm_options_with_nones):
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
 
-    if "pinned_host" in vm_options and not Pacemaker.is_valid_host(vm_options["pinned_host"]):
+    if "pinned_host" in vm_options and not Pacemaker.is_valid_host(
+        vm_options["pinned_host"]
+    ):
         pinned_host = vm_options["pinned_host"]
         raise Exception(f"{pinned_host} is not valid hypervisor")
-    if "preferred_host" in vm_options and not Pacemaker.is_valid_host(vm_options["preferred_host"]):
+    if "preferred_host" in vm_options and not Pacemaker.is_valid_host(
+        vm_options["preferred_host"]
+    ):
         preferred_host = vm_options["preferred_host"]
         raise Exception(f"{preferred_host} is not a valid hypervisor")
 
@@ -232,7 +266,9 @@ def create(vm_options_with_nones):
             logger.info("Import qcow2 disk")
             rbd.import_qcow2(vm_options["image"], disk_name)
             if not rbd.image_exists(disk_name):
-                raise Exception("Could not import qcow2: " + vm_options["image"])
+                raise Exception(
+                    "Could not import qcow2: " + vm_options["image"]
+                )
 
             # Configure VM
             vm_options["disk_name"] = disk_name
@@ -317,7 +353,9 @@ def enable_vm(vm_name):
                 except KeyError:
                     pass
                 try:
-                    live_migration_str = rbd.get_image_metadata(disk_name, "_live_migration")
+                    live_migration_str = rbd.get_image_metadata(
+                        disk_name, "_live_migration"
+                    )
                     if live_migration_str == "true":
                         live_migration = "true"
                 except KeyError:
@@ -350,13 +388,11 @@ def enable_vm(vm_name):
                     crm_config_cmd_multi = rbd.get_image_metadata(
                         disk_name, "_crm_config_cmd"
                     )
-                    crm_config_cmd = crm_config_cmd_multi.split('\n')
+                    crm_config_cmd = crm_config_cmd_multi.split("\n")
                 except KeyError:
                     pass
                 try:
-                    priority = rbd.get_image_metadata(
-                        disk_name, "_priority"
-                    )
+                    priority = rbd.get_image_metadata(disk_name, "_priority")
                 except KeyError:
                     pass
                 try:
@@ -408,9 +444,7 @@ def enable_vm(vm_name):
                 "pacemaker_remote_port": remote_node_port,
                 "pacemaker_remote_timeout": remote_node_timeout,
             }
-            p.add_vm(
-                vm_options
-            )
+            p.add_vm(vm_options)
 
             if vm_name not in p.list_resources():
                 raise Exception(
@@ -444,7 +478,11 @@ def disable_vm(vm_name):
 
         if vm_name in p.list_resources():
             if p.show().split(" ")[0] == "FAILED":
-                logger.info("VM " + vm_name + " is in FAILED state, clean and force delete")
+                logger.info(
+                    "VM "
+                    + vm_name
+                    + " is in FAILED state, clean and force delete"
+                )
                 p.delete(force=True, clean=True)
             elif p.show().split(" ")[0] != "Stopped":
                 logger.info("VM " + vm_name + " is running, force delete")
@@ -541,7 +579,9 @@ def clone(vm_options_with_nones):
     """
     Create a new VM from another
     """
-    vm_options = {k: v for k, v in vm_options_with_nones.items() if v is not None}
+    vm_options = {
+        k: v for k, v in vm_options_with_nones.items() if v is not None
+    }
     src_vm_name = vm_options["name"]
     dst_vm_name = vm_options["dst_name"]
     if src_vm_name == dst_vm_name:
@@ -564,22 +604,36 @@ def clone(vm_options_with_nones):
 
     if "base_xml" not in vm_options:
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-            vm_options["base_xml"] = rbd.get_image_metadata(src_disk, "_base_xml")
+            vm_options["base_xml"] = rbd.get_image_metadata(
+                src_disk, "_base_xml"
+            )
         if "base_xml" not in vm_options:
             raise Exception("Could not find xml libvirt configuration")
-    if "clear_constraint" not in vm_options and "preferred_host" not in vm_options and "pinned_host" not in vm_options:
+    if (
+        "clear_constraint" not in vm_options
+        and "preferred_host" not in vm_options
+        and "pinned_host" not in vm_options
+    ):
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
             try:
-                vm_options["preferred_host"] = rbd.get_image_metadata(src_disk, "_preferred_host")
+                vm_options["preferred_host"] = rbd.get_image_metadata(
+                    src_disk, "_preferred_host"
+                )
             except KeyError:
                 pass
             try:
-                vm_options["pinned_host"] = rbd.get_image_metadata(src_disk, "_pinned_host")
+                vm_options["pinned_host"] = rbd.get_image_metadata(
+                    src_disk, "_pinned_host"
+                )
             except KeyError:
                 pass
-    if vm_options.pinned_host and not Pacemaker.is_valid_host(vm_options.pinned_host):
+    if vm_options.pinned_host and not Pacemaker.is_valid_host(
+        vm_options.pinned_host
+    ):
         raise Exception(f"{vm_options.pinned_host} is not valid hypervisor")
-    elif vm_options.preferred_host and not Pacemaker.is_valid_host(vm_options.preferred_host):
+    elif vm_options.preferred_host and not Pacemaker.is_valid_host(
+        vm_options.preferred_host
+    ):
         raise Exception(f"{vm_options.preferred_host} is not valid hypervisor")
     if "force" not in vm_options:
         vm_options["force"] = False
@@ -593,7 +647,9 @@ def clone(vm_options_with_nones):
 
             # Note: Only deep-copy works for images that are on a group
             # (destination img will keep the snaps but not the group)
-            rbd.copy_image(src_disk, dst_disk, overwrite=vm_options["force"], deep=True)
+            rbd.copy_image(
+                src_disk, dst_disk, overwrite=vm_options["force"], deep=True
+            )
             if not rbd.image_exists(dst_disk):
                 raise Exception("Could not create image disk " + dst_disk)
             try:
@@ -843,6 +899,7 @@ def add_colocation(vm_name, *resources, strong=False):
     _check_name(vm_name)
     with Pacemaker(vm_name) as p:
         p.add_colocation(*resources, strong=strong)
+
 
 def remove_pacemaker_remote(vm_name):
     """

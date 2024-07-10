@@ -81,10 +81,12 @@ if __name__ == "__main__":
             "add_colocation", help="Add a colocation constraint"
         )
         add_pacemaker_remote_parser = subparsers.add_parser(
-            "add_pacemaker_remote", help="Add a pacemaker-remote resource for the VM"
+            "add_pacemaker_remote",
+            help="Add a pacemaker-remote resource for the VM",
         )
         remove_pacemaker_remote_parser = subparsers.add_parser(
-            "remove_pacemaker_remote", help="Remove a pacemaker-remote resource for the VM"
+            "remove_pacemaker_remote",
+            help="Remove a pacemaker-remote resource for the VM",
         )
 
     for name, subparser in subparsers.choices.items():
@@ -161,7 +163,7 @@ if __name__ == "__main__":
                 "--enable-live-migration",
                 action="store_true",
                 required=False,
-                help="Enables live migration for the VM"
+                help="Enables live migration for the VM",
             )
             p.add_argument(
                 "--migration-user",
@@ -192,17 +194,17 @@ if __name__ == "__main__":
                 help="Sets the allowed downtime for live migration in ms (default 0)",
             )
             p.add_argument(
-                '--add-crm-config-cmd',
-                action='append',
+                "--add-crm-config-cmd",
+                action="append",
                 required=False,
                 default=None,
-                help='Sets a crm configure command to run when enabling this guest',
+                help="Sets a crm configure command to run when enabling this guest",
             )
             p.add_argument(
-                '--priority',
+                "--priority",
                 required=False,
                 default=None,
-                help='Sets a priority for this guest',
+                help="Sets a priority for this guest",
             )
 
         clone_parser.add_argument(
@@ -294,27 +296,26 @@ if __name__ == "__main__":
             "--remote_name",
             type=str,
             required=True,
-            help="Pacemaker remote resource name"
+            help="Pacemaker remote resource name",
         )
         add_pacemaker_remote_parser.add_argument(
             "--remote_address",
             type=str,
             required=True,
-            help="Pacemaker remote resource address or hostname"
+            help="Pacemaker remote resource address or hostname",
         )
         add_pacemaker_remote_parser.add_argument(
             "--remote_port",
             type=str,
             required=False,
-            help="Pacemaker remote resource port"
+            help="Pacemaker remote resource port",
         )
         add_pacemaker_remote_parser.add_argument(
             "--remote_timeout",
             type=str,
             required=False,
-            help="Pacemaker remote resource start timeout"
+            help="Pacemaker remote resource start timeout",
         )
-
 
     # if cluster_mode end
 
@@ -338,9 +339,9 @@ if __name__ == "__main__":
         args.live_migration = args.enable_live_migration
         args.crm_config_cmd = args.add_crm_config_cmd
         if args.disable:
-          args.enable = not args.disable
+            args.enable = not args.disable
         else:
-          args.enable = True
+            args.enable = True
         vm_manager.create(vars(args))
     elif args.command == "clone":
         args.base_xml = None
