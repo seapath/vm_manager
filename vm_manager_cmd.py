@@ -72,10 +72,10 @@ if __name__ == "__main__":
             "list_metadata", help="Lists all metadata from an image"
         )
         set_md_parser = subparsers.add_parser(
-            "set_metadata", help="Get metadata value"
+            "set_metadata", help="Set metadata value"
         )
         get_md_parser = subparsers.add_parser(
-            "get_metadata", help="Set metadata value"
+            "get_metadata", help="Get metadata value"
         )
         add_colocation_parser = subparsers.add_parser(
             "add_colocation", help="Add a colocation constraint"
