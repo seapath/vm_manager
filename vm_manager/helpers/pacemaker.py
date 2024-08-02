@@ -229,6 +229,12 @@ class Pacemaker:
             "monitor",
             "timeout='" + vm_options.get("monitor_timeout", "60") + "'",
             "interval='" + vm_options.get("monitor_interval", "10") + "'",
+            "role=Started",
+            "op",
+            "monitor",
+            "timeout='" + vm_options.get("monitor_timeout", "60") + "'",
+            "interval='" + ( str(int(vm_options.get("monitor_interval", "10")) + 1)) + "'",
+            "role=Stopped",
         ]
         if vm_options.get("pacemaker_remote"):
             args += [
