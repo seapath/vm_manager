@@ -10,6 +10,7 @@ import datetime
 from errno import ENOENT
 import xml.etree.ElementTree as ElementTree
 import configparser
+import subprocess
 
 from .helpers.rbd_manager import RbdManager
 from .helpers.pacemaker import Pacemaker
@@ -201,6 +202,20 @@ def _get_observer_host():
         return parser["machines"]["observer"]
     else:
         return None
+
+def _get_remote_nodes():
+    """
+    Get the remote nodes from the crm_mon xml
+    """
+    pacemaker_xml = ElementTree.fromstring(subprocess.getoutput("crm_mon --output-as xml"))
+    nodes = pacemaker_xml.find('nodes')
+
+    remote_nodes = []
+    for node in nodes:
+        if(node.get('type') == "remote"):
+            remote_nodes.append(node.get('name'))
+    return remote_nodes
+
 
 
 def list_vms(enabled=False):
@@ -451,8 +466,11 @@ def enable_vm(vm_name):
                     "Could not add VM " + vm_name + " to the cluster"
                 )
             observer = _get_observer_host()
+            remote_nodes = _get_remote_nodes()
             if observer:
                 p.disable_location(observer)
+            for remote_node in remote_nodes:
+                p.disable_location(remote_node)
             if pinned_host:
                 p.pin_location(pinned_host)
             elif preferred_host:
