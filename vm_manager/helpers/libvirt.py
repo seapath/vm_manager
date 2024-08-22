@@ -67,7 +67,11 @@ class LibVirtManager:
         Raise an error if the XML is not valid.
         :param xml: the libvirt XML string
         """
-        self._conn.defineXMLFlags(xml, libvirt.VIR_DOMAIN_DEFINE_VALIDATE)
+        try:
+            self._conn.defineXMLFlags(xml, libvirt.VIR_DOMAIN_DEFINE_VALIDATE)
+        except libvirt.libvirtError as e:
+            logging.error(f"Error with xml configure: {xml}")
+            raise e
 
     def undefine(self, vm_name):
         """
