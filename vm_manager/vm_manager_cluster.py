@@ -24,6 +24,7 @@ NAMESPACE = ""
 
 RESERVED_NAMES = ["xml"]
 OS_DISK_PREFIX = "system_"
+EXTRA_DISK_PREFIX = "extra_"
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,25 @@ def _check_name(name):
         or not bool(re.match("^[a-zA-Z0-9]*$", name))
     ):
         raise ValueError("Parameter must not contain spaces or special chars")
+
+
+def _generate_rbd_disk_xml_config(disk_name, rbd_secret, index):
+    """
+    Generate the xml configuration fragment for RBD disk
+    """
+    if index > 25:
+        raise ValueError("Index must be between 0 and 25")
+    index_letter = chr(97 + index)
+    return f"""<disk type="network" device="disk">
+            <driver name="qemu" type="raw" cache="writeback" />
+            <auth username="libvirt">
+                <secret type="ceph" uuid="{rbd_secret}" />
+            </auth>
+            <source protocol="rbd" name="{POOL_NAME}/{disk_name}">
+                <host name="rbd" port="6789" />
+            </source>
+            <target dev=vd{index_letter} bus="virtio" />
+        </disk>"""
 
 
 def _create_vm_group(vm_name, force=False):
@@ -69,7 +89,7 @@ def _create_vm_group(vm_name, force=False):
     logger.info("VM group " + vm_name + " created successfully")
 
 
-def _create_xml(xml, vm_name):
+def _create_xml(xml, vm_name, extra_disks):
     """
     Creates a libvirt configuration file according to xml and
     disk_name parameters.
@@ -93,21 +113,18 @@ def _create_xml(xml, vm_name):
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_xml = ElementTree.fromstring(
-        """<disk type="network" device="disk">
-            <driver name="qemu" type="raw" cache="writeback" />
-            <auth username="libvirt">
-                <secret type="ceph" uuid="{}" />
-            </auth>
-            <source protocol="rbd" name="{}/{}">
-                <host name="rbd" port="6789" />
-            </source>
-            <target dev="vda" bus="virtio" />
-        </disk>""".format(
-            rbd_secret, POOL_NAME, disk_name
-        )
-    )
-    xml_root.find("devices").append(disk_xml)
+    xml_devices = xml_root.find("devices")
+    index = 0
+    for disk in [disk_name] + extra_disks:
+        disk_xml_str = _generate_rbd_disk_xml_config(disk, rbd_secret)
+        try:
+            disk_xml = ElementTree.fromstring(disk_xml_str)
+        except ElementTree.ParseError:
+            logger.error("Error parsing disk xml:\n" + disk_xml_str)
+            raise
+        xml_devices.append(disk_xml)
+        logger.info(ElementTree.tostring(xml_devices).decode())
+        index += 1
     return ElementTree.tostring(xml_root).decode()
 
 
@@ -117,12 +134,13 @@ def _configure_vm(vm_options):
     configuration and add it on Pacemaker if enable is set to True.
     """
 
-    xml = _create_xml(vm_options["base_xml"], vm_options["name"])
+    xml = _create_xml(
+        vm_options["base_xml"], vm_options["name"], vm_options["extra_disks"]
+    )
 
     # Add to group and set initial metadata
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         disk_name = OS_DISK_PREFIX + vm_options["name"]
-        rbd.add_image_to_group(disk_name, vm_options["name"])
         logger.info(
             "Image " + disk_name + " added to group " + vm_options["name"]
         )
@@ -203,19 +221,40 @@ def _get_observer_host():
     else:
         return None
 
+
 def _get_remote_nodes():
     """
     Get the remote nodes from the crm_mon xml
     """
-    pacemaker_xml = ElementTree.fromstring(subprocess.getoutput("crm_mon --output-as xml"))
-    nodes = pacemaker_xml.find('nodes')
+    pacemaker_xml = ElementTree.fromstring(
+        subprocess.getoutput("crm_mon --output-as xml")
+    )
+    nodes = pacemaker_xml.find("nodes")
 
     remote_nodes = []
     for node in nodes:
-        if(node.get('type') == "remote"):
-            remote_nodes.append(node.get('name'))
+        if node.get("type") == "remote":
+            remote_nodes.append(node.get("name"))
     return remote_nodes
 
+
+def _clone_vm_disks(rbd, src_vm_name, dst_vm_name, clear_extra_data, force):
+    """
+    Clone all the images of the source VM to the destination VM
+    """
+    src_disks = rbd.list_group_images(src_vm_name)
+    for src_disk in src_disks:
+        dst_disk = src_disk.replace(src_vm_name, dst_vm_name)
+        # Always copy the system disk (OS_DISK_PREFIX)
+        if src_disk.startswith(OS_DISK_PREFIX) or not clear_extra_data:
+            # Note: Only deep-copy works for images that are on a group
+            # (destination img will keep the snaps but not the group)
+            rbd.copy_image(src_disk, dst_disk, overwrite=force, deep=True)
+            if not rbd.image_exists(dst_disk):
+                raise Exception("Could not create image disk " + dst_disk)
+            rbd.add_image_to_group(dst_disk, dst_vm_name)
+        else:
+            rbd.create_empty_disk(dst_disk, rbd.get_image_size(src_disk))
 
 
 def list_vms(enabled=False):
@@ -285,8 +324,29 @@ def create(vm_options_with_nones):
                     "Could not import qcow2: " + vm_options["image"]
                 )
 
+            # Create extra disks
+            extra_disks = []
+            if "extra_disks" in vm_options:
+                index = 0
+                for extra_disk in vm_options["extra_disks"]:
+                    extra_disk_name = (
+                        EXTRA_DISK_PREFIX
+                        + vm_options["name"]
+                        + "_"
+                        + str(index)
+                    )
+                    rbd.create_empty_disk(
+                        extra_disk_name,
+                        extra_disk,
+                        vm_options["name"],
+                        vm_options["force"],
+                    )
+                    extra_disks.append(extra_disk_name)
+                    index += 1
             # Configure VM
+            vm_options["extra_disks"] = extra_disks
             vm_options["disk_name"] = disk_name
+            rbd.add_image_to_group(disk_name, vm_options["name"])
             _configure_vm(vm_options)
 
         except Exception as err:
@@ -313,18 +373,17 @@ def remove(vm_name):
     # Remove group and image from RBD cluster
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-        disk_name = OS_DISK_PREFIX + vm_name
         if rbd.group_exists(vm_name):
+            disks = rbd.list_group_images(vm_name)
             rbd.remove_group(vm_name)
-
-        if rbd.image_exists(disk_name):
-            rbd.remove_image(disk_name)
+            for disk in disks:
+                rbd.remove_image(disk)
+            for disk in disks:
+                if rbd.image_exists(disk):
+                    raise Exception("Could not remove image " + disk)
 
         if rbd.group_exists(vm_name):
             raise Exception("Could not remove group " + vm_name)
-
-        if rbd.image_exists(disk_name):
-            raise Exception("Could not remove image " + disk_name)
 
     logger.info("VM " + vm_name + " removed")
 
@@ -603,6 +662,7 @@ def clone(vm_options_with_nones):
     }
     src_vm_name = vm_options["name"]
     dst_vm_name = vm_options["dst_name"]
+    clear_extra_data = vm_options["clear_extra_data"]
     if src_vm_name == dst_vm_name:
         raise ValueError(
             "Source and destination images cannot have the same name "
@@ -660,17 +720,15 @@ def clone(vm_options_with_nones):
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         try:
-            # Overwrite image if necessary
-            if rbd.image_exists(dst_disk):
-                rbd.remove_image(dst_disk)
 
-            # Note: Only deep-copy works for images that are on a group
-            # (destination img will keep the snaps but not the group)
-            rbd.copy_image(
-                src_disk, dst_disk, overwrite=vm_options["force"], deep=True
+            _clone_vm_disks(
+                rbd,
+                src_vm_name,
+                dst_vm_name,
+                clear_extra_data,
+                vm_options["force"],
             )
-            if not rbd.image_exists(dst_disk):
-                raise Exception("Could not create image disk " + dst_disk)
+
             try:
                 rbd.remove_image_metadata(dst_disk, "_preferred_host")
             except KeyError:

@@ -140,6 +140,10 @@ class RbdManager:
         """
         Create a given size image on the Ceph cluster.
         """
+        try:
+            size = int(size)
+        except ValueError:
+            pass
         # Convert size if units specified
         if not isinstance(size, int):
             unit_list = ["B", "K", "M", "G", "T"]
@@ -586,3 +590,32 @@ class RbdManager:
             dest,
         ]
         subprocess.run(args, check=True)
+
+    def create_empty_disk(self, disk_name, size, group, force=False):
+        """
+        Create an empty disk.
+
+        :param disk_name: the disk name
+        :param size: the disk size in Mib or with units (e.g. 1G)
+        :param group: the group name
+        :param force: set to True to overwrite existing disk
+        """
+        if not self.group_exists(group):
+            raise RbdException("Group " + group + " does not exist")
+        if self.image_exists(disk_name):
+            if self.is_image_in_group(disk_name, group) and not force:
+                raise RbdException("Disk " + disk_name + " already exists")
+            else:
+                self.remove_image(disk_name)
+        self.create_image(disk_name, size)
+        logger.info("Extra disk " + disk_name + " added")
+
+    def get_image_size(self, img):
+        """
+        Get image size.
+        """
+        img_inst = self._get_image(img)
+        try:
+            return img_inst.size() / 1024**2  # Convert to MiB
+        finally:
+            img_inst.close()

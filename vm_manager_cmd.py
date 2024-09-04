@@ -120,6 +120,14 @@ if __name__ == "__main__":
             help="VM image disk to import",
         )
 
+        create_parser.add_argument(
+            "--extra-disks",
+            type=str,
+            required=False,
+            help="Disk size in MB or with suffix (K, M, G, T)",
+            action="append",
+        )
+
         for p in [create_parser, clone_parser]:
             p.add_argument(
                 "--disable",
@@ -221,6 +229,13 @@ if __name__ == "__main__":
             action="store_true",
             required=False,
             help="Do not keep location constraint",
+        )
+
+        clone_parser.add_argument(
+            "--clear_extra_data",
+            action="store_true",
+            required=False,
+            help="Clear extra disk contents",
         )
 
         clone_parser.add_argument(
