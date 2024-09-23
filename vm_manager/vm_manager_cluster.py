@@ -130,7 +130,7 @@ def _configure_vm(vm_options):
         rbd.set_image_metadata(disk_name, "vm_name", vm_options["name"])
         rbd.set_image_metadata(disk_name, "xml", xml)
         rbd.set_image_metadata(disk_name, "_base_xml", vm_options["base_xml"])
-        if "live_migration" in vm_options:
+        if vm_options.get("live_migration"):
             rbd.set_image_metadata(disk_name, "_live_migration", "true")
         if "migration_user" in vm_options:
             rbd.set_image_metadata(
