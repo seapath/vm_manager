@@ -569,7 +569,7 @@ class RbdManager:
             raise RbdException("Image " + img + " is not in group " + group)
 
     # Image import methods
-    def import_qcow2(self, src, dest):
+    def import_qcow2(self, src, dest, progress=False):
         """
         Import image src to qcow2 format (dest).
         """
@@ -586,4 +586,6 @@ class RbdManager:
             src,
             dest,
         ]
+        if progress:
+            args.append("-p")
         subprocess.run(args, check=True)
