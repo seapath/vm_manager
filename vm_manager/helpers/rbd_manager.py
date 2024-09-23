@@ -578,6 +578,7 @@ class RbdManager:
         args = [
             "/usr/bin/qemu-img",
             "convert",
+            "-W",
             "-f",
             "qcow2",
             "-O",
