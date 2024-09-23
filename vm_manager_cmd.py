@@ -128,6 +128,14 @@ if __name__ == "__main__":
             action="append",
         )
 
+        create_parser.add_argument(
+            "-p",
+            "--progress",
+            action="store_true",
+            required=False,
+            help="Print disk import progress bar",
+        )
+
         for p in [create_parser, clone_parser]:
             p.add_argument(
                 "--disable",

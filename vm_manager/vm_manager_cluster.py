@@ -303,6 +303,11 @@ def create(vm_options_with_nones):
         preferred_host = vm_options["preferred_host"]
         raise Exception(f"{preferred_host} is not a valid hypervisor")
 
+    try:
+        progress = vm_options["progress"]
+    except KeyError:
+        progress = False
+
     # Create VM group
     if "force" not in vm_options:
         vm_options["force"] = False
@@ -318,7 +323,7 @@ def create(vm_options_with_nones):
 
             # Import qcow2 disk
             logger.info("Import qcow2 disk")
-            rbd.import_qcow2(vm_options["image"], disk_name)
+            rbd.import_qcow2(vm_options["image"], disk_name, progress)
             if not rbd.image_exists(disk_name):
                 raise Exception(
                     "Could not import qcow2: " + vm_options["image"]
