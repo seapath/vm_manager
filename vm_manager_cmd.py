@@ -128,6 +128,15 @@ if __name__ == "__main__":
             help="Print disk import progress bar",
         )
 
+        create_parser.add_argument(
+            "--disk-bus",
+            type=str,
+            required=False,
+            default="virtio",
+            help="Set the image disk bus type in the VM, "
+            "must be a valid type recognized by libvirt (default virtio)",
+        )
+
         for p in [create_parser, clone_parser]:
             p.add_argument(
                 "--disable",

@@ -69,10 +69,14 @@ def _create_vm_group(vm_name, force=False):
     logger.info("VM group " + vm_name + " created successfully")
 
 
-def _create_xml(xml, vm_name):
+def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     """
     Creates a libvirt configuration file according to xml and
     disk_name parameters.
+
+    target_disk_bus: bus type of the VM system disk inside the VM.
+        Should be a valid type recognized by libvirt, see https://libvirt.org/formatdomain.html#devices.
+        Default: virtio
     """
     disk_name = OS_DISK_PREFIX + vm_name
     xml_root = ElementTree.fromstring(xml)
@@ -102,9 +106,9 @@ def _create_xml(xml, vm_name):
             <source protocol="rbd" name="{}/{}">
                 <host name="rbd" port="6789" />
             </source>
-            <target dev="vda" bus="virtio" />
+            <target dev="vda" bus="{}" />
         </disk>""".format(
-            rbd_secret, POOL_NAME, disk_name
+            rbd_secret, POOL_NAME, disk_name, target_disk_bus
         )
     )
     xml_root.find("devices").append(disk_xml)
@@ -117,7 +121,7 @@ def _configure_vm(vm_options):
     configuration and add it on Pacemaker if enable is set to True.
     """
 
-    xml = _create_xml(vm_options["base_xml"], vm_options["name"])
+    xml = _create_xml(vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"])
 
     # Add to group and set initial metadata
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -176,6 +180,10 @@ def _configure_vm(vm_options):
         if "metadata" in vm_options:
             for name, data in vm_options["metadata"].items():
                 rbd.set_image_metadata(disk_name, name, data)
+        if "disk_bus" in vm_options:
+            rbd.set_image_metadata(
+                disk_name, "_disk_bus", vm_options["disk_bus"]
+            )
     logger.info("Image " + disk_name + " initial metadata set")
 
     # Define libvirt xml configuration
@@ -686,6 +694,12 @@ def clone(vm_options_with_nones):
                 rbd.remove_image_metadata(dst_disk, "_pinned_host")
             except KeyError:
                 pass
+
+            try:
+                vm_options["disk_bus"] = rbd.get_image_metadata(src_disk, "_disk_bus")
+            except KeyError:
+                logger.warning(f"{src_disk} has no disk_bus metadata, set it to virtio for VM {dst_vm_name}")
+                vm_options["disk_bus"] = "virtio"
 
             # Configure VM
             vm_options["name"] = dst_vm_name
