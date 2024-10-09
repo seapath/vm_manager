@@ -628,11 +628,13 @@ def clone(vm_options_with_nones):
 
     if "base_xml" not in vm_options:
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-            vm_options["base_xml"] = rbd.get_image_metadata(
-                src_disk, "_base_xml"
-            )
-        if "base_xml" not in vm_options:
-            raise Exception("Could not find xml libvirt configuration")
+            try:
+                vm_options["base_xml"] = rbd.get_image_metadata(
+                    src_disk, "_base_xml"
+                )
+            except KeyError as e:
+                logger.error(f"Could not get xml libvirt configuration, {src_disk} has no _base_xml metadata")
+                raise e
     if (
         "clear_constraint" not in vm_options
         and "preferred_host" not in vm_options
