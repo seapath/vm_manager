@@ -654,11 +654,11 @@ def clone(vm_options_with_nones):
     if vm_options.pinned_host and not Pacemaker.is_valid_host(
         vm_options.pinned_host
     ):
-        raise Exception(f"{vm_options.pinned_host} is not valid hypervisor")
+        raise ValueError(f"{vm_options.pinned_host} is not valid hypervisor")
     elif vm_options.preferred_host and not Pacemaker.is_valid_host(
         vm_options.preferred_host
     ):
-        raise Exception(f"{vm_options.preferred_host} is not valid hypervisor")
+        raise ValueError(f"{vm_options.preferred_host} is not valid hypervisor")
     if "force" not in vm_options:
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
