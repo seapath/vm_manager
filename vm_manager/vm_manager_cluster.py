@@ -300,6 +300,8 @@ def create(vm_options_with_nones):
 
             # Configure VM
             vm_options["disk_name"] = disk_name
+            if "disk_bus" not in vm_options:
+                vm_options["disk_bus"] = "virtio"
             _configure_vm(vm_options)
 
         except Exception as err:
