@@ -11,6 +11,7 @@ from errno import ENOENT
 import xml.etree.ElementTree as ElementTree
 import configparser
 import subprocess
+import json
 
 from .helpers.rbd_manager import RbdManager
 from .helpers.pacemaker import Pacemaker
@@ -121,7 +122,9 @@ def _configure_vm(vm_options):
     configuration and add it on Pacemaker if enable is set to True.
     """
 
-    xml = _create_xml(vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"])
+    xml = _create_xml(
+        vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"]
+    )
 
     # Add to group and set initial metadata
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -184,6 +187,25 @@ def _configure_vm(vm_options):
             rbd.set_image_metadata(
                 disk_name, "_disk_bus", vm_options["disk_bus"]
             )
+        if "pacemaker_meta" in vm_options:
+            rbd.set_image_metadata(
+                disk_name,
+                "_pacemaker_meta",
+                json.dumps(vm_options["pacemaker_meta"]),
+            )
+        if "pacemaker_params" in vm_options:
+            rbd.set_image_metadata(
+                disk_name,
+                "_pacemaker_params",
+                json.dumps(vm_options["pacemaker_params"]),
+            )
+        if "pacemaker_utilization" in vm_options:
+            rbd.set_image_metadata(
+                disk_name,
+                "_pacemaker_utilization",
+                json.dumps(vm_options["pacemaker_utilization"]),
+            )
+
     logger.info("Image " + disk_name + " initial metadata set")
 
     # Define libvirt xml configuration
@@ -211,19 +233,21 @@ def _get_observer_host():
     else:
         return None
 
+
 def _get_remote_nodes():
     """
     Get the remote nodes from the crm_mon xml
     """
-    pacemaker_xml = ElementTree.fromstring(subprocess.getoutput("crm_mon --output-as xml"))
-    nodes = pacemaker_xml.find('nodes')
+    pacemaker_xml = ElementTree.fromstring(
+        subprocess.getoutput("crm_mon --output-as xml")
+    )
+    nodes = pacemaker_xml.find("nodes")
 
     remote_nodes = []
     for node in nodes:
-        if(node.get('type') == "remote"):
-            remote_nodes.append(node.get('name'))
+        if node.get("type") == "remote":
+            remote_nodes.append(node.get("name"))
     return remote_nodes
-
 
 
 def list_vms(enabled=False):
@@ -368,6 +392,9 @@ def enable_vm(vm_name):
             remote_node_address = None
             remote_node_port = None
             remote_node_timeout = None
+            custom_metadata = {}
+            custom_params = {}
+            custom_utilization = {}
 
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
@@ -448,7 +475,31 @@ def enable_vm(vm_name):
                         disk_name, "_remote_node_timeout"
                     )
                 except KeyError:
+                        pass
+                try:
+                    custom_meta = json.loads(
+                        rbd.get_image_metadata(disk_name, "_pacemaker_meta")
+                    )
+                except KeyError:
                     pass
+                if type(custom_metadata) is not dict:
+                    raise ValueError("Custom metadata must be a dictionary")
+                try:
+                    custom_params = json.loads(
+                        rbd.get_image_metadata(disk_name, "_pacemaker_params")
+                    )
+                except KeyError:
+                    pass
+                if type(custom_params) is not dict:
+                    raise ValueError("Custom params must be a dictionary")
+                try:
+                    custom_utilization = json.loads(
+                        rbd.get_image_metadata(disk_name, "_pacemaker_utilization")
+                    )
+                except KeyError:
+                    pass
+                if type(custom_utilization) is not dict:
+                    raise ValueError("Custom utilization must be a dictionary")
 
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
@@ -473,6 +524,9 @@ def enable_vm(vm_name):
                 "pacemaker_remote_addr": remote_node_address,
                 "pacemaker_remote_port": remote_node_port,
                 "pacemaker_remote_timeout": remote_node_timeout,
+                "custom_meta": custom_meta,
+                "custom_params": custom_params,
+                "custom_utilization": custom_utilization
             }
             p.add_vm(vm_options)
 
@@ -643,7 +697,9 @@ def clone(vm_options_with_nones):
                     src_disk, "_base_xml"
                 )
             except KeyError as e:
-                logger.error(f"Could not get xml libvirt configuration, {src_disk} has no _base_xml metadata")
+                logger.error(
+                    f"Could not get xml libvirt configuration, {src_disk} has no _base_xml metadata"
+                )
                 raise e
     if (
         "clear_constraint" not in vm_options
@@ -666,11 +722,15 @@ def clone(vm_options_with_nones):
     if "pinned_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["pinned_host"]
     ):
-        raise ValueError(f"{vm_options['pinned_host']} is not valid hypervisor")
+        raise ValueError(
+            f"{vm_options['pinned_host']} is not valid hypervisor"
+        )
     elif "preferred_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["preferred_host"]
     ):
-        raise ValueError(f"{vm_options['preferred_host']} is not valid hypervisor")
+        raise ValueError(
+            f"{vm_options['preferred_host']} is not valid hypervisor"
+        )
     if "force" not in vm_options:
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
@@ -698,9 +758,13 @@ def clone(vm_options_with_nones):
                 pass
 
             try:
-                vm_options["disk_bus"] = rbd.get_image_metadata(src_disk, "_disk_bus")
+                vm_options["disk_bus"] = rbd.get_image_metadata(
+                    src_disk, "_disk_bus"
+                )
             except KeyError:
-                logger.warning(f"{src_disk} has no disk_bus metadata, set it to virtio for VM {dst_vm_name}")
+                logger.warning(
+                    f"{src_disk} has no disk_bus metadata, set it to virtio for VM {dst_vm_name}"
+                )
                 vm_options["disk_bus"] = "virtio"
 
             # Configure VM
