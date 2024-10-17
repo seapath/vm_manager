@@ -188,12 +188,15 @@ class Pacemaker:
         """
         Add VM to Pacemaker cluster.
         """
-        args = [
+
+        command_args = [
             "crm",
             "configure",
             "primitive",
             self._resource,
             "ocf:seapath:VirtualDomain",
+        ]
+        params_args = [
             "params",
             "force_stop=" + str(vm_options.get("force_stop", False)).lower(),
             "migration_downtime="
@@ -207,12 +210,24 @@ class Pacemaker:
             "migration_user='"
             + vm_options.get("migration_user", "root")
             + "'",
+        ]
+        if vm_options.get("custom_params"):
+            for key, value in vm_options["custom_params"].items():
+                params_args.append(f"{key}='{value}'")
+
+        meta_args = [
             "meta",
             "allow-migrate='"
             + str(vm_options.get("live_migration", False)).lower()
             + "'",
             "is-managed=" + str(vm_options.get("is_managed", True)).lower(),
             "priority='" + vm_options.get("priority", "0") + "'",
+        ]
+        if vm_options.get("custom_meta"):
+            for key, value in vm_options["custom_meta"].items():
+                meta_args.append(f"{key}='{value}'")
+
+        op_args = [
             "op",
             "start",
             "timeout='" + vm_options.get("start_timeout", "120") + "'",
@@ -230,6 +245,15 @@ class Pacemaker:
             "timeout='" + vm_options.get("monitor_timeout", "60") + "'",
             "interval='" + vm_options.get("monitor_interval", "10") + "'",
         ]
+        utilization_args = []
+        if vm_options.get("custom_utilization"):
+            utilization_args.append("utilization")
+            for key, value in vm_options["custom_utilization"].items():
+                utilization_args.append(f"{key}='{value}'")
+        args = (
+            command_args + params_args + meta_args + op_args + utilization_args
+        )
+
         if vm_options.get("pacemaker_remote"):
             args += [
                 "meta",

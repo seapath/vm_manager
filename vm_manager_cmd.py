@@ -228,6 +228,40 @@ if __name__ == "__main__":
                 default=None,
                 help="Sets a priority for this guest",
             )
+            p.add_argument(
+                "--pacemaker-meta",
+                type=str,
+                metavar="key=value",
+                required=False,
+                help='Set a key-value pacemaker "meta".'
+                 " Can be used multiple times. "
+                "(do not put spaces before or after the = sign)",
+                nargs="+",
+                action=ParseMetaData,
+            )
+            p.add_argument(
+                "--pacemaker-params",
+                type=str,
+                metavar="key=value",
+                required=False,
+                help='Set a key-value pacemaker "params".'
+                 " Can be used multiple times. "
+                "(do not put spaces before or after the = sign)",
+                nargs="+",
+                action=ParseMetaData,
+            )
+            p.add_argument(
+                "--pacemaker-utilization",
+                type=str,
+                metavar="key=value",
+                required=False,
+                help='Set a key-value pacemaker "utilization".'
+                 " Can be used multiple times. "
+                "(do not put spaces before or after the = sign)",
+                nargs="+",
+                nargs="+",
+                action=ParseMetaData,
+            )
 
         clone_parser.add_argument(
             "--dst_name", type=str, required=True, help="Destination VM name"
@@ -238,6 +272,27 @@ if __name__ == "__main__":
             action="store_true",
             required=False,
             help="Do not keep location constraint",
+        )
+
+        clone_parser.add_argument(
+            "--clear-pacemaker-meta",
+            action="store_true",
+            required=False,
+            help="Do not keep custom pacemaker meta",
+        )
+
+        clone_parser.add_argument(
+            "--clear-pacemaker-params",
+            action="store_true",
+            required=False,
+            help="Do not keep custom pacemaker params",
+        )
+
+        clone_parser.add_argument(
+            "--clear-pacemaker-utilization",
+            action="store_true",
+            required=False,
+            help="Do not keep custom pacemaker utilization",
         )
 
         clone_parser.add_argument(

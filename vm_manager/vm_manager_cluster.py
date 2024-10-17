@@ -11,6 +11,7 @@ from errno import ENOENT
 import xml.etree.ElementTree as ElementTree
 import configparser
 import subprocess
+import json
 
 from .helpers.rbd_manager import RbdManager
 from .helpers.pacemaker import Pacemaker
@@ -184,6 +185,18 @@ def _configure_vm(vm_options):
             rbd.set_image_metadata(
                 disk_name, "_disk_bus", vm_options["disk_bus"]
             )
+        for pacemaker_arg in (
+            "pacemaker_meta",
+            "pacemaker_params",
+            "pacemaker_utilization",
+        ):
+            if pacemaker_arg in vm_options:
+                rbd.set_image_metadata(
+                    disk_name,
+                    f"_{pacemaker_arg}",
+                    json.dumps(vm_options[pacemaker_arg]),
+                )
+
     logger.info("Image " + disk_name + " initial metadata set")
 
     # Define libvirt xml configuration
@@ -256,6 +269,17 @@ def create(vm_options_with_nones):
 
         for name, value in vm_options["metadata"].items():
             _check_name(name)
+
+        for pacemaker_arg in (
+            "pacemaker_meta",
+            "pacemaker_params",
+            "pacemaker_utilization",
+        ):
+            if pacemaker_arg in vm_options:
+                if not isinstance(vm_options[pacemaker_arg], dict):
+                    raise ValueError(
+                        f"{pacemaker_arg} parameter must be a dictionary"
+                    )
 
     for f in [CEPH_CONF, vm_options["image"]]:
         if not os.path.isfile(f):
@@ -368,6 +392,9 @@ def enable_vm(vm_name):
             remote_node_address = None
             remote_node_port = None
             remote_node_timeout = None
+            custom_meta = {}
+            custom_params = {}
+            custom_utilization = {}
 
             with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
                 try:
@@ -449,6 +476,32 @@ def enable_vm(vm_name):
                     )
                 except KeyError:
                     pass
+                try:
+                    custom_meta = json.loads(
+                        rbd.get_image_metadata(disk_name, "_pacemaker_meta")
+                    )
+                except KeyError:
+                    pass
+                if type(custom_meta) is not dict:
+                    raise ValueError("Custom metadata must be a dictionary")
+                try:
+                    custom_params = json.loads(
+                        rbd.get_image_metadata(disk_name, "_pacemaker_params")
+                    )
+                except KeyError:
+                    pass
+                if type(custom_params) is not dict:
+                    raise ValueError("Custom params must be a dictionary")
+                try:
+                    custom_utilization = json.loads(
+                        rbd.get_image_metadata(
+                            disk_name, "_pacemaker_utilization"
+                        )
+                    )
+                except KeyError:
+                    pass
+                if type(custom_utilization) is not dict:
+                    raise ValueError("Custom utilization must be a dictionary")
 
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
@@ -473,6 +526,9 @@ def enable_vm(vm_name):
                 "pacemaker_remote_addr": remote_node_address,
                 "pacemaker_remote_port": remote_node_port,
                 "pacemaker_remote_timeout": remote_node_timeout,
+                "custom_meta": custom_meta,
+                "custom_params": custom_params,
+                "custom_utilization": custom_utilization,
             }
             p.add_vm(vm_options)
 
@@ -633,6 +689,20 @@ def clone(vm_options_with_nones):
         for name, value in vm_options["metadata"].items():
             _check_name(name)
 
+    if "pacemaker_meta" in vm_options:
+        if not isinstance(vm_options["pacemaker_meta"], dict):
+            raise ValueError("pacemaker_meta parameter must be a dictionary")
+
+    if "pacemaker_params" in vm_options:
+        if not isinstance(vm_options["pacemaker_params"], dict):
+            raise ValueError("pacemaker_params parameter must be a dictionary")
+
+    if "pacemaker_utilization" in vm_options:
+        if not isinstance(vm_options["pacemaker_utilization"], dict):
+            raise ValueError(
+                "pacemaker_utilization parameter must be a dictionary"
+            )
+
     src_disk = OS_DISK_PREFIX + src_vm_name
     dst_disk = OS_DISK_PREFIX + dst_vm_name
 
@@ -671,6 +741,33 @@ def clone(vm_options_with_nones):
         vm_options["preferred_host"]
     ):
         raise ValueError(f"{vm_options['preferred_host']} is not valid hypervisor")
+    for pacemaker_arg in (
+        "pacemaker_meta",
+        "pacemaker_params",
+        "pacemaker_utilization",
+    ):
+        clear_arg = vm_options.get(f"clear_{pacemaker_arg}", False)
+        if not clear_arg:
+            pacemaker_new_arg = vm_options.get(pacemaker_arg, {})
+            logging.debug(f"{pacemaker_arg} new arg: {pacemaker_new_arg}")
+            with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+                try:
+                    vm_options[pacemaker_arg] = json.loads(
+                        rbd.get_image_metadata(src_disk, f"_{pacemaker_arg}")
+                    )
+                    logging.debug(
+                        f"Found previous {pacemaker_arg}: {vm_options[pacemaker_arg]}"
+                    )
+                    if type(vm_options[pacemaker_arg]) is not dict:
+                        raise ValueError(
+                            f"{pacemaker_arg} metadata must be a dictionary"
+                        )
+                except KeyError:
+                    vm_options[pacemaker_arg] = {}
+            vm_options[pacemaker_arg].update(pacemaker_new_arg)
+            logging.debug(
+                f"Updated {pacemaker_arg} with new arg: {vm_options[pacemaker_arg]}"
+            )
     if "force" not in vm_options:
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
@@ -688,14 +785,30 @@ def clone(vm_options_with_nones):
             )
             if not rbd.image_exists(dst_disk):
                 raise Exception("Could not create image disk " + dst_disk)
-            try:
-                rbd.remove_image_metadata(dst_disk, "_preferred_host")
-            except KeyError:
-                pass
-            try:
-                rbd.remove_image_metadata(dst_disk, "_pinned_host")
-            except KeyError:
-                pass
+            for disk_metadata in (
+                "_preferred_host",
+                "_pinned_host",
+                "_pacemaker_meta",
+                "_pacemaker_params",
+                "_pacemaker_utilization",
+            ):
+                try:
+                    rbd.remove_image_metadata(dst_disk, disk_metadata)
+                except KeyError:
+                    pass
+
+            for pacemaker_arg in (
+                "pacemaker_meta",
+                "pacemaker_param",
+                "pacemaker_utilization",
+            ):
+                dst_pacemaker_arg = vm_options.get(pacemaker_arg, {})
+                if dst_pacemaker_arg:
+                    rbd.set_image_metadata(
+                        dst_disk,
+                        f"_{pacemaker_arg}",
+                        json.dumps(dst_pacemaker_arg),
+                    )
 
             try:
                 vm_options["disk_bus"] = rbd.get_image_metadata(src_disk, "_disk_bus")
