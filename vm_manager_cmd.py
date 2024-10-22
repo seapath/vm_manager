@@ -259,7 +259,6 @@ if __name__ == "__main__":
                  " Can be used multiple times. "
                 "(do not put spaces before or after the = sign)",
                 nargs="+",
-                nargs="+",
                 action=ParseMetaData,
             )
 
