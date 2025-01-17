@@ -1,0 +1,28 @@
+[project]
+name = "vm_manager"
+version = "0.1"
+description = "Managed VMs in Seapath cluster"
+license = { text = "Apache-2.0" }
+authors = [
+	{name = "RTE"},
+	{name = "Mathieu Dupré", email = "mathieu.dupre@savoirfairelinux.com"},
+]
+dependencies = [
+    "Flask-WTF",
+    "flask",
+]
+readme = "README.md"
+
+[tool.setuptools]
+packages = ["vm_manager", "vm_manager.helpers"]
+
+[project.scripts]
+libvirt_cmd = "vm_manager.helpers.libvirt_cmd:main"
+vm_manager_cmd = "vm_manager.vm_manager_cmd:main"
+
+[project.urls]
+Homepage = "https://github.com/seapath/vm_manager"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
