@@ -39,5 +39,8 @@ def start_vm(guest):
     return out
 
 
-if __name__ == "__main__":
+def main():
     app.run(host="0.0.0.0")
+
+if __name__ == "__main__":
+    main()
