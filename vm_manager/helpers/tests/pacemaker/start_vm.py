@@ -11,7 +11,7 @@ from vm_manager.helpers.pacemaker import Pacemaker
 VM_NAME = "vm1"
 SLEEP = 1
 
-if __name__ == "__main__":
+def main():
 
     with Pacemaker(VM_NAME) as p:
 
@@ -25,3 +25,6 @@ if __name__ == "__main__":
 
         else:
             raise Exception("VM is already started")
+
+if __name__ == "__main__":
+    main()

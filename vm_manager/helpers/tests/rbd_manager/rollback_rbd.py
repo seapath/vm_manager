@@ -54,7 +54,7 @@ def cleanup(rbd):
         print("Image list: " + str(rbd.list_images()))
 
 
-if __name__ == "__main__":
+def main():
 
     with RbdManager(CEPH_CONF, POOL_NAME) as rbd:
 
@@ -168,3 +168,6 @@ if __name__ == "__main__":
 
         finally:
             cleanup(rbd)
+
+if __name__ == "__main__":
+    main()

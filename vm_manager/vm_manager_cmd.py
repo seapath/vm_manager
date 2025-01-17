@@ -30,7 +30,7 @@ class ParseMetaData(argparse.Action):
         setattr(namespace, self.dest, d)
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="vm_manager cli wrapper")
     parser.add_argument(
         "-v",
@@ -467,3 +467,6 @@ if __name__ == "__main__":
             remote_node_port=args.remote_port,
             remote_node_timeout=args.remote_timeout,
         )
+
+if __name__ == "__main__":
+    main()

@@ -9,7 +9,7 @@ A simple cli wrapper for libvirt_helper module
 import argparse
 from vm_manager.helpers.libvirt import LibVirtManager
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="libvirt helper cli wrapper")
     subparsers = parser.add_subparsers(
         help="command", dest="command", required=True, metavar="command"
@@ -47,3 +47,6 @@ if __name__ == "__main__":
             libvirt_manager.define(xml)
     elif args.command == "export":
         LibVirtManager.export_configuration(args.domain, args.destination)
+
+if __name__ == "__main__":
+    main()

@@ -18,7 +18,7 @@ DEFAULT_NS = "vm"
 NS1 = "namespace1"
 NS2 = "namespace2"
 
-if __name__ == "__main__":
+def main():
 
     with RbdManager(CEPH_CONF, POOL_NAME) as rbd:
 
@@ -128,3 +128,6 @@ if __name__ == "__main__":
                     print("Remove namespace " + ns)
                     rbd.remove_namespace(ns)
                     print("Namespace list: " + str(rbd.list_namespaces()))
+
+if __name__ == "__main__":
+    main()
