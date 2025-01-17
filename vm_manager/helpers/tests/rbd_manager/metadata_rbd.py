@@ -20,7 +20,7 @@ METADATA = {
     "test4": "metadatatest4",
 }
 
-if __name__ == "__main__":
+def main():
 
     with RbdManager(CEPH_CONF, POOL_NAME) as rbd:
 
@@ -70,3 +70,6 @@ if __name__ == "__main__":
                 print("Remove image " + IMG_NAME)
                 rbd.remove_image(IMG_NAME)
                 print("Image list: " + str(rbd.list_images()))
+
+if __name__ == "__main__":
+    main()

@@ -19,7 +19,7 @@ IMG_NAME = "img1"
 SNAPS = ["snap0", "snap1", "snap2", "snap3", "snap4", "snap5"]
 GROUP = "group1"
 
-if __name__ == "__main__":
+def main():
 
     with RbdManager(CEPH_CONF, POOL_NAME) as rbd:
 
@@ -162,3 +162,6 @@ if __name__ == "__main__":
                 print("Remove image " + IMG_NAME)
                 rbd.remove_image(IMG_NAME)  # remove forces purge
                 print("Image list: " + str(rbd.list_images()))
+
+if __name__ == "__main__":
+    main()
