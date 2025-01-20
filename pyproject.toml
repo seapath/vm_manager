@@ -10,6 +10,7 @@ authors = [
 dependencies = [
     "Flask-WTF",
     "flask",
+    "libvirt-python",
 ]
 readme = "README.md"
 
