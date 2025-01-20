@@ -3,3 +3,16 @@
 
 include vm_manager/testdata/vm.xml
 include vm_manager/testdata/wrong_vm_config.xml
+
+# Include tests/samples script as package data (i.e. not in PATH)
+include vm_manager/helpers/tests/pacemaker/add_vm.py
+include vm_manager/helpers/tests/pacemaker/remove_vm.py
+include vm_manager/helpers/tests/pacemaker/start_vm.py
+include vm_manager/helpers/tests/pacemaker/stop_vm.py
+include vm_manager/helpers/tests/rbd_manager/clone_rbd.py
+include vm_manager/helpers/tests/rbd_manager/create_rbd_group.py
+include vm_manager/helpers/tests/rbd_manager/create_rbd_namespace.py
+include vm_manager/helpers/tests/rbd_manager/metadata_rbd.py
+include vm_manager/helpers/tests/rbd_manager/purge_rbd.py
+include vm_manager/helpers/tests/rbd_manager/rollback_rbd.py
+include vm_manager/helpers/tests/rbd_manager/write_rbd.py
