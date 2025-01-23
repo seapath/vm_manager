@@ -5,7 +5,7 @@ name='vm_manager'
 flavors='check sonar check_format format flake'
 
 [build]
-command='python3 setup.py install --prefix .'
+command='/usr/bin/pip install --root-user-action=ignore --prefix=. .'
 
 [sonar]
 command='/usr/bin/python-sonar.sh \
