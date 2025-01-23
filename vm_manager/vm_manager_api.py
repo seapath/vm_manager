@@ -1,3 +1,7 @@
+#!/usr/bin/env python3
+# Copyright (C) 2021, RTE (http://www.rte-france.com)
+# SPDX-License-Identifier: Apache-2.0
+
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 import vm_manager as v

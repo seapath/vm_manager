@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # Copyright (C) 2021, RTE (http://www.rte-france.com)
 # Copyright (C) 2024 Savoir-faire Linux Inc.
 # SPDX-License-Identifier: Apache-2.0
