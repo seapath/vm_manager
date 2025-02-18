@@ -6,6 +6,7 @@ Helper module to manipulate libvirt
 """
 
 import subprocess
+import sys
 import libvirt
 
 import logging
@@ -18,12 +19,12 @@ class LibVirtManager:
     A class to manage libvirt
     """
 
-    def __init__(self):
+    def __init__(self, uri="qemu:///system"):
         """
         ListVirtManager constructor. The constructor opens a connection to
         libvirt through qemu system.
         """
-        self._conn = libvirt.open("qemu:///system")
+        self._conn = libvirt.open(uri)
 
     def __enter__(self):
         """
@@ -132,6 +133,25 @@ class LibVirtManager:
                 return "Paused"
             else:
                 return "Undefined"
+
+    def console(self, vm_name):
+        """
+        Open a console on a VM
+        :param vm_name: the VM to open the console
+        """
+        uri = self._conn.getURI()
+        command = ["/usr/bin/virsh", "-c", uri, "console", vm_name]
+        logger.debug("Run: " + " ".join(command))
+        try:
+            subprocess.run(
+                command,
+                check=True,
+                stdin=sys.stdin,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+        except subprocess.CalledProcessError:
+            pass
 
     @staticmethod
     def export_configuration(domain, xml_path):

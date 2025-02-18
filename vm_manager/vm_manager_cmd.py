@@ -48,6 +48,8 @@ def main():
     stop_parser = subparsers.add_parser("stop", help="Stop a VM")
     subparsers.add_parser("list", help="List all VMs")
     subparsers.add_parser("status", help="Print VM status")
+    console_parser = subparsers.add_parser("console", help="Connect to a VM console")
+
 
     if vm_manager.cluster_mode:
         clone_parser = subparsers.add_parser("clone", help="Clone a VM")
@@ -90,7 +92,7 @@ def main():
         )
 
     for name, subparser in subparsers.choices.items():
-        if name != "list":
+        if name not in ("list", "console"):
             subparser.add_argument(
                 "-n",
                 "--name",
@@ -108,6 +110,11 @@ def main():
         action="store_true",
         help="Force VM stop (virtual unplug) - not implemented yet for cluster"
         " mode",
+    )
+    console_parser.add_argument(
+        "name",
+        type=str,
+        help="The VM name",
     )
 
     if vm_manager.cluster_mode:
@@ -394,6 +401,13 @@ def main():
             required=False,
             help="Pacemaker remote resource start timeout",
         )
+        console_parser.add_argument(
+            "--ssh-user",
+            type=str,
+            required=False,
+            default="admin",
+            help="SSH user to connect to the VM",
+        )
 
     # if cluster_mode end
 
@@ -467,6 +481,11 @@ def main():
             remote_node_port=args.remote_port,
             remote_node_timeout=args.remote_timeout,
         )
+    elif args.command == "console":
+        if vm_manager.cluster_mode:
+            vm_manager.console(args.name, args.ssh_user)
+        else:
+            vm_manager.console(args.name)
 
 if __name__ == "__main__":
     main()
