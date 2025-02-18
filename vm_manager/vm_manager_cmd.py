@@ -53,8 +53,8 @@ def main():
 
     if vm_manager.cluster_mode:
         clone_parser = subparsers.add_parser("clone", help="Clone a VM")
+        enable_parser = subparsers.add_parser("enable", help="Enable a VM")
         subparsers.add_parser("disable", help="Disable a VM")
-        subparsers.add_parser("enable", help="Enable a VM")
         create_snap_parser = subparsers.add_parser(
             "create_snapshot", help="Create a VM snapshot"
         )
@@ -118,6 +118,13 @@ def main():
     )
 
     if vm_manager.cluster_mode:
+
+        enable_parser.add_argument(
+            "--nostart",
+            action="store_true",
+            required=False,
+            help="No start after enable",
+        )
 
         create_parser.add_argument(
             "-i",
@@ -446,7 +453,7 @@ def main():
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
     elif args.command == "enable":
-        vm_manager.enable_vm(args.name)
+        vm_manager.enable_vm(args.name, args.nostart)
     elif args.command == "status":
         print(vm_manager.status(args.name))
     elif args.command == "create_snapshot":
