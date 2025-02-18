@@ -106,3 +106,11 @@ def status(vm_name):
     """
     with LibVirtManager() as lvm:
         return lvm.status(vm_name)
+
+def console(vm_name):
+    """
+    Open a virsh console for the given VM
+    :param vm_name: the VM name to open the console
+    """
+    with LibVirtManager() as lvm:
+        lvm.console(vm_name)

@@ -418,3 +418,23 @@ class Pacemaker:
         ret = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
         ret.wait()
         return ret.returncode == 0
+
+    @staticmethod
+    def find_resource(resource):
+        """
+        Find where a resource is running.
+        :param resource: the resource to find
+        :return: the node where the resource is running or None if the resource
+                 is not running or not found
+        """
+        command = "crm status | " + \
+            f'grep -E "^  \* {resource}\\b" | ' + \
+            "grep Started | " + \
+            "awk 'NF>1{print $NF}'"
+        ret = subprocess.run(command, shell=True, stdout=subprocess.PIPE)
+        host = ret.stdout.decode().strip()
+        if host == "":
+            logger.debug(f"Resource {resource} not found")
+            return None
+        logger.debug(f"Resource {resource} found on {host}")
+        return host

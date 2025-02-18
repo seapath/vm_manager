@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import os
+import sys
 import logging
 import uuid
 import re
@@ -1116,3 +1117,19 @@ def add_pacemaker_remote(
             p.add_meta("remote-connect-timeout", remote_node_timeout)
         p.add_meta("remote-addr", remote_node_address)
         p.add_meta("remote-node", remote_node)
+
+
+def console(vm_name, ssh_user="admin"):
+    """
+    Open a virsh console for the given VM
+    :param vm_name: the VM name to open the console
+    """
+    # First we need to get the hypervisor where the VM is running
+    host = Pacemaker.find_resource(vm_name)
+    if not host:
+        print(f"VM {vm_name} is not running on any hypervisor", file=sys.stderr)
+        sys.exit(1)
+    libvirt_uri = f"qemu+ssh://{ssh_user}@{host}/system"
+    logger.debug(f"Opening console for VM {vm_name} on {libvirt_uri}")
+    with LibVirtManager(uri=libvirt_uri) as lvm:
+        lvm.console(vm_name)

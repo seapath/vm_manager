@@ -16,6 +16,7 @@ if cluster_mode:
         stop,
         create,
         clone,
+        console,
         remove,
         enable_vm,
         disable_vm,
@@ -36,6 +37,7 @@ if cluster_mode:
 else:
     from .vm_manager_libvirt import (
         list_vms,
+        console,
         create,
         remove,
         start,
