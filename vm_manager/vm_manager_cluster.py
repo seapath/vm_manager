@@ -211,7 +211,9 @@ def _configure_vm(vm_options):
     if "enable" not in vm_options or (
         "enable" in vm_options and vm_options["enable"]
     ):
-        enable_vm(vm_options["name"])
+        if "nostart" not in vm_options:
+            vm_options["nostart"] = False
+        enable_vm(vm_options["name"], vm_options["nostart"])
 
 
 def _get_observer_host():

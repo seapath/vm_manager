@@ -119,7 +119,21 @@ def main():
 
     if vm_manager.cluster_mode:
 
+        clone_parser.add_argument(
+            "--nostart",
+            action="store_true",
+            required=False,
+            help="No start after enable",
+        )
+
         enable_parser.add_argument(
+            "--nostart",
+            action="store_true",
+            required=False,
+            help="No start after enable",
+        )
+
+        create_parser.add_argument(
             "--nostart",
             action="store_true",
             required=False,
