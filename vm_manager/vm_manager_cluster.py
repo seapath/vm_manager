@@ -370,7 +370,7 @@ def remove(vm_name):
     logger.info("VM " + vm_name + " removed")
 
 
-def enable_vm(vm_name):
+def enable_vm(vm_name, nostart=False):
     """
     Enable a VM in Pacemaker
     :param vm_name: the VM name to be enabled
@@ -532,7 +532,7 @@ def enable_vm(vm_name):
                 "custom_params": custom_params,
                 "custom_utilization": custom_utilization,
             }
-            p.add_vm(vm_options)
+            p.add_vm(vm_options,nostart)
 
             if vm_name not in p.list_resources():
                 raise Exception(
@@ -552,7 +552,8 @@ def enable_vm(vm_name):
                 for cmd in crm_config_cmd:
                     p.run_crm_cmd(cmd)
             p.manage()
-            p.wait_for("Started")
+            if not nostart:
+                p.wait_for("Started")
 
         else:
             logger.warning("VM " + vm_name + " is already on the cluster")

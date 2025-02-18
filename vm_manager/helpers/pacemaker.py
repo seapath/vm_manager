@@ -184,7 +184,7 @@ class Pacemaker:
             check=True,
         )
 
-    def add_vm(self, vm_options):
+    def add_vm(self, vm_options, nostart=False):
         """
         Add VM to Pacemaker cluster.
         """
@@ -222,6 +222,7 @@ class Pacemaker:
             + "'",
             "is-managed=" + str(vm_options.get("is_managed", True)).lower(),
             "priority='" + vm_options.get("priority", "0") + "'",
+            "target-role=" + ("Stopped" if nostart else "Started"),
         ]
         if vm_options.get("custom_meta"):
             for key, value in vm_options["custom_meta"].items():
