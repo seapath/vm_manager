@@ -85,7 +85,7 @@ def main():
             ts = rbd.get_image_snapshot_timestamp(IMG_NAME, SNAP)
             print("Snapshot " + SNAP + " timestamp: " + str(ts))
             if (
-                int(ts.timestamp()) > int(time.time()) + 5
+                int(ts.timestamp()) - time.timezone > int(time.time()) + 5
             ):  # Compare with 5 sec delay
                 raise Exception(
                     "Incorrect snapshot " + SNAP + " timestamp: " + str(ts)
