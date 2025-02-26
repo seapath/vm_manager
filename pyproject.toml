@@ -18,11 +18,22 @@ dependencies = [
 readme = "README.md"
 
 [tool.setuptools]
-packages = ["vm_manager", "vm_manager.helpers"]
+packages = ["vm_manager", "vm_manager.helpers", "vm_manager.helpers.tests.pacemaker", "vm_manager.helpers.tests.rbd_manager"]
 
 [project.scripts]
 libvirt_cmd = "vm_manager.helpers.libvirt_cmd:main"
 vm_manager_cmd = "vm_manager.vm_manager_cmd:main"
+clone_rbd = "vm_manager.helpers.tests.rbd_manager.clone_rbd:main"
+create_rbd_group = "vm_manager.helpers.tests.rbd_manager.create_rbd_group:main"
+create_rbd_namespace = "vm_manager.helpers.tests.rbd_manager.create_rbd_namespace:main"
+metadata_rbd = "vm_manager.helpers.tests.rbd_manager.metadata_rbd:main"
+purge_rbd = "vm_manager.helpers.tests.rbd_manager.purge_rbd:main"
+rollback_rbd = "vm_manager.helpers.tests.rbd_manager.rollback_rbd:main"
+write_rbd = "vm_manager.helpers.tests.rbd_manager.write_rbd:main"
+add_vm = "vm_manager.helpers.tests.pacemaker.add_vm:main"
+remove_vm = "vm_manager.helpers.tests.pacemaker.remove_vm:main"
+start_vm = "vm_manager.helpers.tests.pacemaker.start_vm:main"
+stop_vm = "vm_manager.helpers.tests.pacemaker.stop_vm:main"
 
 [project.urls]
 Homepage = "https://github.com/seapath/vm_manager"
