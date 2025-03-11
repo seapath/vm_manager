@@ -8,9 +8,10 @@ cluster
 """
 
 from vm_manager.helpers.pacemaker import Pacemaker
+import vm_manager as m
 
 VM_NAME = "vm1"
-VM_XML = "/usr/share/testdata/vm.xml"
+VM_XML = m.__path__[0] + "/testdata/vm.xml"
 
 START_TIMEOUT = "120"
 STOP_TIMEOUT = "30"
