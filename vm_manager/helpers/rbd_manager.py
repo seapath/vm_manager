@@ -69,6 +69,7 @@ class RbdManager:
         Close I/O context.
         """
         self._ioctx.close()
+        self._cluster.shutdown()
 
     # Namespace methods
     def list_namespaces(self):
