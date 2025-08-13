@@ -71,7 +71,6 @@ def _create_vm_group(vm_name, force=False):
 
     logger.info("VM group " + vm_name + " created successfully")
 
-
 def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     """
     Creates a libvirt configuration file according to xml and
@@ -100,23 +99,22 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_xml = ElementTree.fromstring(
-        """<disk type="network" device="disk">
-            <driver name="qemu" type="raw" cache="writeback" />
-            <auth username="libvirt">
-                <secret type="ceph" uuid="{}" />
-            </auth>
-            <source protocol="rbd" name="{}/{}">
-                <host name="rbd" port="6789" />
-            </source>
-            <target dev="vda" bus="{}" />
-        </disk>""".format(
+    disk_xml = ElementTree.fromstring("""
+<disk type="network" device="disk">
+  <driver name="qemu" type="raw" cache="writeback" />
+  <auth username="libvirt">
+    <secret type="ceph" uuid="{}" />
+  </auth>
+  <source pool='ceph' protocol="rbd" name="{}/{}" />
+  <target dev="vda" bus="{}" />
+</disk>
+""".format(
             rbd_secret, POOL_NAME, disk_name, target_disk_bus
         )
     )
     xml_root.find("devices").append(disk_xml)
-    return ElementTree.tostring(xml_root).decode()
-
+    ElementTree.indent(xml_root, space="  ")
+    return ElementTree.tostring(xml_root, encoding="unicode")
 
 def _configure_vm(vm_options):
     """
