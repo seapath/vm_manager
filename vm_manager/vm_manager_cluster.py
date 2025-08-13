@@ -71,6 +71,21 @@ def _create_vm_group(vm_name, force=False):
 
     logger.info("VM group " + vm_name + " created successfully")
 
+def _get_ceph_hosts_xml(port=6789):
+    """
+    Runs 'ceph orch host ls' to retrieve hostnames and returns
+    them as XML lines in a single string.
+
+    :param port: Port number to include in the XML (default 6789)
+    :return: str - XML lines
+    """
+    cmd = ["bash", "-c", "ceph orch host ls -f json-pretty | jq -r '.[].hostname'"]
+
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    hostnames = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+    xml_lines = "\n".join(f'<host name="{h}" port="{port}" />' for h in hostnames)
+    return xml_lines
 
 def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     """
@@ -93,6 +108,7 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     name_element = ElementTree.SubElement(xml_root, "uuid")
     name_element.text = str(uuid.uuid4())
     rbd_secret = None
+    hosts_list = _get_ceph_hosts_xml()
     with LibVirtManager() as libvirt_manager:
         libvirt_secrets = libvirt_manager.get_virsh_secrets()
         for secret, secret_value in libvirt_secrets.items():
@@ -100,23 +116,24 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_xml = ElementTree.fromstring(
-        """<disk type="network" device="disk">
-            <driver name="qemu" type="raw" cache="writeback" />
-            <auth username="libvirt">
-                <secret type="ceph" uuid="{}" />
-            </auth>
-            <source protocol="rbd" name="{}/{}">
-                <host name="rbd" port="6789" />
-            </source>
-            <target dev="vda" bus="{}" />
-        </disk>""".format(
-            rbd_secret, POOL_NAME, disk_name, target_disk_bus
+    disk_xml = ElementTree.fromstring("""
+<disk type="network" device="disk">
+  <driver name="qemu" type="raw" cache="writeback" />
+  <auth username="libvirt">
+    <secret type="ceph" uuid="{}" />
+  </auth>
+  <source protocol="rbd" name="{}/{}">
+    {}
+  </source>
+  <target dev="vda" bus="{}" />
+</disk>
+""".format(
+            rbd_secret, POOL_NAME, disk_name, hosts_list, target_disk_bus
         )
     )
     xml_root.find("devices").append(disk_xml)
-    return ElementTree.tostring(xml_root).decode()
-
+    ElementTree.indent(xml_root, space="  ")
+    return ElementTree.tostring(xml_root, encoding="unicode")
 
 def _configure_vm(vm_options):
     """
