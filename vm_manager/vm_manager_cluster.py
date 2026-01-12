@@ -1139,7 +1139,7 @@ def add_pacemaker_remote(
         p.add_meta("remote-node", remote_node)
 
 
-def console(vm_name, ssh_user="admin"):
+def console(vm_name, ssh_user="libvirtadmin"):
     """
     Open a virsh console for the given VM
     :param vm_name: the VM name to open the console

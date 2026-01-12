@@ -426,7 +426,7 @@ def main():
             "--ssh-user",
             type=str,
             required=False,
-            default="admin",
+            default="libvirtadmin",
             help="SSH user to connect to the VM",
         )
 
