@@ -20,6 +20,7 @@ MONITOR_INTERVAL = "10"
 MIGRATE_FROM_TIMEOUT = "60"
 MIGRATE_TO_TIMEOUT = "120"
 
+
 def main():
     with Pacemaker(VM_NAME) as p:
 
@@ -48,6 +49,7 @@ def main():
             raise Exception("Resource " + VM_NAME + " was not added")
 
         p.wait_for("Started")
+
 
 if __name__ == "__main__":
     main()

@@ -71,6 +71,7 @@ def _create_vm_group(vm_name, force=False):
 
     logger.info("VM group " + vm_name + " created successfully")
 
+
 def _get_ceph_hosts_xml(port=6789):
     """
     Runs 'ceph orch host ls' to retrieve hostnames and returns
@@ -79,13 +80,22 @@ def _get_ceph_hosts_xml(port=6789):
     :param port: Port number to include in the XML (default 6789)
     :return: str - XML lines
     """
-    cmd = ["bash", "-c", "ceph orch host ls -f json-pretty | jq -r '.[].hostname'"]
+    cmd = [
+        "bash",
+        "-c",
+        "ceph orch host ls -f json-pretty | jq -r '.[].hostname'",
+    ]
 
     result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    hostnames = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    hostnames = [
+        line.strip() for line in result.stdout.splitlines() if line.strip()
+    ]
 
-    xml_lines = "\n".join(f'<host name="{h}" port="{port}" />' for h in hostnames)
+    xml_lines = "\n".join(
+        f'<host name="{h}" port="{port}" />' for h in hostnames
+    )
     return xml_lines
+
 
 def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     """
@@ -116,7 +126,8 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
                 rbd_secret = secret_value
     if not rbd_secret:
         raise Exception("Can't found rbd secret")
-    disk_xml = ElementTree.fromstring("""
+    disk_xml = ElementTree.fromstring(
+        """
 <disk type="network" device="disk">
   <driver name="qemu" type="raw" cache="writeback" />
   <auth username="libvirt">
@@ -135,13 +146,16 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     ElementTree.indent(xml_root, space="  ")
     return ElementTree.tostring(xml_root, encoding="unicode")
 
+
 def _configure_vm(vm_options):
     """
     Configure VM vm_name: set initial metadata, define libvirt xml
     configuration and add it on Pacemaker if enable is set to True.
     """
 
-    xml = _create_xml(vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"])
+    xml = _create_xml(
+        vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"]
+    )
 
     # Add to group and set initial metadata
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -245,19 +259,21 @@ def _get_observer_host():
     else:
         return None
 
+
 def _get_remote_nodes():
     """
     Get the remote nodes from the crm_mon xml
     """
-    pacemaker_xml = ElementTree.fromstring(subprocess.getoutput("crm_mon --output-as xml"))
-    nodes = pacemaker_xml.find('nodes')
+    pacemaker_xml = ElementTree.fromstring(
+        subprocess.getoutput("crm_mon --output-as xml")
+    )
+    nodes = pacemaker_xml.find("nodes")
 
     remote_nodes = []
     for node in nodes:
-        if(node.get('type') == "remote"):
-            remote_nodes.append(node.get('name'))
+        if node.get("type") == "remote":
+            remote_nodes.append(node.get("name"))
     return remote_nodes
-
 
 
 def list_vms(enabled=False):
@@ -551,7 +567,7 @@ def enable_vm(vm_name, nostart=False):
                 "custom_params": custom_params,
                 "custom_utilization": custom_utilization,
             }
-            p.add_vm(vm_options,nostart)
+            p.add_vm(vm_options, nostart)
 
             if vm_name not in p.list_resources():
                 raise Exception(
@@ -735,7 +751,9 @@ def clone(vm_options_with_nones):
                     src_disk, "_base_xml"
                 )
             except KeyError as e:
-                logger.error(f"Could not get xml libvirt configuration, {src_disk} has no _base_xml metadata")
+                logger.error(
+                    f"Could not get xml libvirt configuration, {src_disk} has no _base_xml metadata"
+                )
                 raise e
     if (
         "clear_constraint" not in vm_options
@@ -758,11 +776,15 @@ def clone(vm_options_with_nones):
     if "pinned_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["pinned_host"]
     ):
-        raise ValueError(f"{vm_options['pinned_host']} is not valid hypervisor")
+        raise ValueError(
+            f"{vm_options['pinned_host']} is not valid hypervisor"
+        )
     elif "preferred_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["preferred_host"]
     ):
-        raise ValueError(f"{vm_options['preferred_host']} is not valid hypervisor")
+        raise ValueError(
+            f"{vm_options['preferred_host']} is not valid hypervisor"
+        )
     for pacemaker_arg in (
         "pacemaker_meta",
         "pacemaker_params",
@@ -833,9 +855,13 @@ def clone(vm_options_with_nones):
                     )
 
             try:
-                vm_options["disk_bus"] = rbd.get_image_metadata(src_disk, "_disk_bus")
+                vm_options["disk_bus"] = rbd.get_image_metadata(
+                    src_disk, "_disk_bus"
+                )
             except KeyError:
-                logger.warning(f"{src_disk} has no disk_bus metadata, set it to virtio for VM {dst_vm_name}")
+                logger.warning(
+                    f"{src_disk} has no disk_bus metadata, set it to virtio for VM {dst_vm_name}"
+                )
                 vm_options["disk_bus"] = "virtio"
 
             # Configure VM
@@ -1147,7 +1173,9 @@ def console(vm_name, ssh_user="libvirtadmin"):
     # First we need to get the hypervisor where the VM is running
     host = Pacemaker.find_resource(vm_name)
     if not host:
-        print(f"VM {vm_name} is not running on any hypervisor", file=sys.stderr)
+        print(
+            f"VM {vm_name} is not running on any hypervisor", file=sys.stderr
+        )
         sys.exit(1)
     libvirt_uri = f"qemu+ssh://{ssh_user}@{host}/system"
     logger.debug(f"Opening console for VM {vm_name} on {libvirt_uri}")
