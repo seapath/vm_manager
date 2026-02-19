@@ -40,19 +40,18 @@ def _create_xml(xml, vm_name):
     return ElementTree.tostring(xml_root).decode()
 
 
-def create(vm_name, base_xml, *args, **kwargs):
+def create(args):
     """
     Create a new VM
     :param vm_name: the VM name
     :param base_xml:  the VM libvirt xml configuration
     """
-
-    xml = _create_xml(base_xml, vm_name)
+    xml = _create_xml(args.get("base_xml"), args.get("name"))
 
     with LibVirtManager() as lvm:
         lvm.define(xml)
 
-    logger.info("VM " + vm_name + " created successfully")
+    logger.info("VM " + args.get("name") + " created successfully")
 
 
 def remove(vm_name):
