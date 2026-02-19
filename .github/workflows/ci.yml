@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cqfd
+        run: |
+          git clone https://github.com/savoirfairelinux/cqfd.git /tmp/cqfd
+          cd /tmp/cqfd
+          sudo make install
+
+      - name: Initialize cqfd container
+        run: cqfd init
+
+      - name: Check formatting
+        run: cqfd -b check_format
+
+      - name: Run flake8
+        run: cqfd -b flake
