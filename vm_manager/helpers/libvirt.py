@@ -82,6 +82,14 @@ class LibVirtManager:
         domain = self._conn.lookupByName(vm_name)
         domain.undefineFlags(libvirt.VIR_DOMAIN_UNDEFINE_NVRAM)
 
+    def set_autostart(self, vm_name, enabled):
+        """
+        Set the autostart flag on a VM
+        :param vm_name: the VM name
+        :param enabled: True to enable autostart, False to disable
+        """
+        self._conn.lookupByName(vm_name).setAutostart(1 if enabled else 0)
+
     def start(self, vm_name):
         """
         Start a VM

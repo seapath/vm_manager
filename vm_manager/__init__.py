@@ -43,4 +43,5 @@ else:
         start,
         stop,
         status,
+        autostart,
     )

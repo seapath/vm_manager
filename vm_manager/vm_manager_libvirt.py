@@ -50,6 +50,8 @@ def create(args):
 
     with LibVirtManager() as lvm:
         lvm.define(xml)
+        if args.get("autostart"):
+            lvm.set_autostart(args.get("name"), True)
 
     logger.info("VM " + args.get("name") + " created successfully")
 
@@ -74,11 +76,25 @@ def start(vm_name):
     Start or resume a stopped or paused VM
     The VM must enabled before being started
     :param vm_name: the VM to be started
+    :param autostart: if True, enable autostart on the VM
     """
     with LibVirtManager() as lvm:
         lvm.start(vm_name)
 
     logger.info("VM " + vm_name + " started")
+
+
+def autostart(vm_name, enabled):
+    """
+    Set the autostart flag on a VM
+    :param vm_name: the VM name
+    :param enabled: True to enable autostart, False to disable
+    """
+    with LibVirtManager() as lvm:
+        lvm.set_autostart(vm_name, enabled)
+
+    state = "enabled" if enabled else "disabled"
+    logger.info("VM " + vm_name + " autostart " + state)
 
 
 def stop(vm_name, force=False):
