@@ -3,7 +3,9 @@
   <os>
     <type arch="x86_64" machine="q35">hvm</type>
   </os>
-  <cpu mode="host-model" check="full"/>
+  <cpu mode="custom">
+    <model fallback="forbid">qemu64</model>
+  </cpu>
   <clock offset="utc">
     <timer name="rtc" tickpolicy="catchup"/>
     <timer name="pit" tickpolicy="delay"/>

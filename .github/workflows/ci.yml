@@ -26,3 +26,32 @@ jobs:
 
       - name: Run flake8
         run: cqfd -b flake
+
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            qemu-system-x86 \
+            libvirt-daemon-system \
+            libvirt-dev \
+            pkg-config
+
+      - name: Start libvirtd and grant access
+        run: |
+          sudo systemctl start libvirtd
+          sudo usermod -aG libvirt "$USER"
+
+      - name: Install package with test deps
+        run: pip install ".[test]"
+
+      - name: Run tests
+        run: sg libvirt -c "pytest tests/ -v --tb=short"
