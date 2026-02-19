@@ -430,7 +430,7 @@ class Pacemaker:
         """
         command = (
             "crm status | "
-            + f'grep -E "^  \* {resource}\\b" | '
+            + f'grep -E "^  \\* {resource}\\b" | '
             + "grep Started | "
             + "awk 'NF>1{print $NF}'"
         )
