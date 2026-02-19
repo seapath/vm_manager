@@ -52,6 +52,32 @@ def main():
         "console", help="Connect to a VM console"
     )
 
+    if not vm_manager.cluster_mode:
+        create_parser.add_argument(
+            "--no-autostart",
+            action="store_true",
+            required=False,
+            help="Do not enable autostart on the VM",
+        )
+        autostart_parser = subparsers.add_parser(
+            "autostart", help="Set the autostart flag on a VM"
+        )
+        autostart_group = autostart_parser.add_mutually_exclusive_group(
+            required=True
+        )
+        autostart_group.add_argument(
+            "--enable",
+            action="store_true",
+            default=False,
+            help="Enable autostart",
+        )
+        autostart_group.add_argument(
+            "--disable",
+            action="store_true",
+            default=False,
+            help="Disable autostart",
+        )
+
     if vm_manager.cluster_mode:
         clone_parser = subparsers.add_parser("clone", help="Clone a VM")
         enable_parser = subparsers.add_parser("enable", help="Enable a VM")
@@ -442,7 +468,12 @@ def main():
     if args.command == "list":
         print("\n".join(vm_manager.list_vms()))
     elif args.command == "start":
-        vm_manager.start(args.name)
+        if vm_manager.cluster_mode:
+            vm_manager.start(args.name)
+        else:
+            vm_manager.start(
+                args.name, autostart=not args.no_autostart
+            )
     elif args.command == "stop":
         vm_manager.stop(args.name, force=args.force)
     elif args.command == "remove":
@@ -507,6 +538,8 @@ def main():
             remote_node_port=args.remote_port,
             remote_node_timeout=args.remote_timeout,
         )
+    elif args.command == "autostart":
+        vm_manager.autostart(args.name, args.enable)
     elif args.command == "console":
         if vm_manager.cluster_mode:
             vm_manager.console(args.name, args.ssh_user)
