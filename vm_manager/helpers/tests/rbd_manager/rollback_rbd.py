@@ -85,6 +85,7 @@ def main():
             ts = rbd.get_image_snapshot_timestamp(IMG_NAME, SNAP)
             if ts.tzinfo is None:
                 from datetime import timezone
+
                 ts = ts.replace(tzinfo=timezone.utc)
             print("Snapshot " + SNAP + " timestamp: " + str(ts))
             if (
