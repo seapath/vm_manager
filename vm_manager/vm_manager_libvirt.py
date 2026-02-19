@@ -107,6 +107,7 @@ def status(vm_name):
     with LibVirtManager() as lvm:
         return lvm.status(vm_name)
 
+
 def console(vm_name):
     """
     Open a virsh console for the given VM

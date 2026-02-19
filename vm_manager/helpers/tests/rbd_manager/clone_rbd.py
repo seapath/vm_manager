@@ -18,6 +18,7 @@ IMG3 = "img3"
 SNAP = "snap"
 TEXT = "Hello world"
 
+
 def main():
     with RbdManager(CEPH_CONF, POOL_NAME) as rbd:
 
@@ -118,6 +119,7 @@ def main():
                     print("Remove image " + img)
                     rbd.remove_image(img)
                     print("Image list: " + str(rbd.list_images()))
+
 
 if __name__ == "__main__":
     main()

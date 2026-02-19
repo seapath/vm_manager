@@ -14,6 +14,7 @@ from vm_manager.helpers.pacemaker import Pacemaker
 SLEEP = 1
 VM_NAME = "vm1"
 
+
 def main():
     with Pacemaker(VM_NAME) as p:
 
@@ -35,6 +36,7 @@ def main():
         print("Resource list: " + str(resources))
         if VM_NAME in resources:
             raise Exception("Resource " + VM_NAME + " was not removed")
+
 
 if __name__ == "__main__":
     main()

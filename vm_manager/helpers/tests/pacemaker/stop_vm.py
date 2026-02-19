@@ -11,6 +11,7 @@ from vm_manager.helpers.pacemaker import Pacemaker
 VM_NAME = "vm1"
 SLEEP = 1
 
+
 def main():
     with Pacemaker(VM_NAME) as p:
 
@@ -24,6 +25,7 @@ def main():
 
         else:
             raise Exception("Machine is already stopped")
+
 
 if __name__ == "__main__":
     main()

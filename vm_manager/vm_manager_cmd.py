@@ -48,8 +48,9 @@ def main():
     stop_parser = subparsers.add_parser("stop", help="Stop a VM")
     subparsers.add_parser("list", help="List all VMs")
     subparsers.add_parser("status", help="Print VM status")
-    console_parser = subparsers.add_parser("console", help="Connect to a VM console")
-
+    console_parser = subparsers.add_parser(
+        "console", help="Connect to a VM console"
+    )
 
     if vm_manager.cluster_mode:
         clone_parser = subparsers.add_parser("clone", help="Clone a VM")
@@ -262,7 +263,7 @@ def main():
                 metavar="key=value",
                 required=False,
                 help='Set a key-value pacemaker "meta".'
-                 " Can be used multiple times. "
+                " Can be used multiple times. "
                 "(do not put spaces before or after the = sign)",
                 nargs="+",
                 action=ParseMetaData,
@@ -273,7 +274,7 @@ def main():
                 metavar="key=value",
                 required=False,
                 help='Set a key-value pacemaker "params".'
-                 " Can be used multiple times. "
+                " Can be used multiple times. "
                 "(do not put spaces before or after the = sign)",
                 nargs="+",
                 action=ParseMetaData,
@@ -284,7 +285,7 @@ def main():
                 metavar="key=value",
                 required=False,
                 help='Set a key-value pacemaker "utilization".'
-                 " Can be used multiple times. "
+                " Can be used multiple times. "
                 "(do not put spaces before or after the = sign)",
                 nargs="+",
                 action=ParseMetaData,
@@ -507,6 +508,7 @@ def main():
             vm_manager.console(args.name, args.ssh_user)
         else:
             vm_manager.console(args.name)
+
 
 if __name__ == "__main__":
     main()
