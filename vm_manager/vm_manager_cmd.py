@@ -197,6 +197,20 @@ def get_parser():
             "must be a valid type recognized by libvirt (default virtio)",
         )
 
+        create_parser.add_argument(
+            "--additional-disk",
+            type=str,
+            metavar="PATH",
+            dest="additional_disks",
+            action="append",
+            required=False,
+            default=None,
+            help="Path to an additional qcow2 disk image to import into Ceph "
+            "and attach to the VM. Can be specified multiple times. The "
+            "disks are attached as vdb, vdc, ... and share the --disk-bus "
+            "setting with the system disk.",
+        )
+
         for p in [create_parser, clone_parser, import_parser]:
             p.add_argument(
                 "--disable",
