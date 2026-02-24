@@ -85,6 +85,27 @@ def qcow2_image():
 
 
 @pytest.fixture
+def additional_qcow2_images():
+    """Create two small temporary qcow2 images for additional disk testing."""
+    paths = []
+    for _ in range(2):
+        with tempfile.NamedTemporaryFile(suffix=".qcow2", delete=False) as f:
+            path = f.name
+        subprocess.run(
+            ["qemu-img", "create", "-f", "qcow2", path, "64M"],
+            check=True,
+            capture_output=True,
+        )
+        paths.append(path)
+    yield paths
+    for p in paths:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+
+
+@pytest.fixture
 def created_vm(vm_name, qcow2_image):
     """Create a VM and return its name. Enables by default."""
     xml = _read_test_xml()
@@ -93,6 +114,23 @@ def created_vm(vm_name, qcow2_image):
             "name": vm_name,
             "image": qcow2_image,
             "base_xml": xml,
+        }
+    )
+    return vm_name
+
+
+@pytest.fixture
+def created_vm_with_additional_disks(
+    vm_name, qcow2_image, additional_qcow2_images
+):
+    """Create a VM with additional disks and return its name."""
+    xml = _read_test_xml()
+    vmc.create(
+        {
+            "name": vm_name,
+            "image": qcow2_image,
+            "base_xml": xml,
+            "additional_disks": additional_qcow2_images,
         }
     )
     return vm_name
@@ -521,7 +559,7 @@ class TestSnapshots:
         with pytest.raises(ValueError, match="not datetime"):
             vmc.purge_image("vm", date="2025-01-01")
 
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(ValueError, match="non-negative integer"):
             vmc.purge_image("vm", number=-1)
 
 
@@ -693,6 +731,150 @@ class TestAddToCluster:
             with LibVirtManager() as lvm:
                 if vm_name in lvm.list():
                     lvm.undefine(vm_name)
+
+
+# ── additional disks ─────────────────────────────────────────────────
+
+
+class TestAdditionalDisksCreate:
+    def test_create_with_additional_disks(
+        self, created_vm_with_additional_disks
+    ):
+        assert created_vm_with_additional_disks in vmc.list_vms()
+
+    def test_create_with_additional_disks_force(
+        self,
+        created_vm_with_additional_disks,
+        qcow2_image,
+        additional_qcow2_images,
+    ):
+        vmc.create(
+            {
+                "name": created_vm_with_additional_disks,
+                "image": qcow2_image,
+                "base_xml": _read_test_xml(),
+                "additional_disks": additional_qcow2_images,
+                "force": True,
+            }
+        )
+        assert created_vm_with_additional_disks in vmc.list_vms()
+
+    def test_create_additional_disk_missing_file_raises(
+        self, vm_name, qcow2_image
+    ):
+        with pytest.raises(IOError):
+            vmc.create(
+                {
+                    "name": vm_name,
+                    "image": qcow2_image,
+                    "base_xml": _read_test_xml(),
+                    "additional_disks": ["/nonexistent/disk.qcow2"],
+                }
+            )
+
+
+class TestAdditionalDisksRemove:
+    def test_remove_vm_with_additional_disks(
+        self, vm_name, qcow2_image, additional_qcow2_images
+    ):
+        vmc.create(
+            {
+                "name": vm_name,
+                "image": qcow2_image,
+                "base_xml": _read_test_xml(),
+                "additional_disks": additional_qcow2_images,
+            }
+        )
+        vmc.remove(vm_name)
+        assert vmc.status(vm_name) == "Undefined"
+
+
+class TestAdditionalDisksSnapshot:
+    def test_create_snapshot(self, created_vm_with_additional_disks):
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap1")
+        assert "snap1" in vmc.list_snapshots(created_vm_with_additional_disks)
+
+    def test_remove_snapshot(self, created_vm_with_additional_disks):
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap1")
+        vmc.remove_snapshot(created_vm_with_additional_disks, "snap1")
+        assert "snap1" not in vmc.list_snapshots(
+            created_vm_with_additional_disks
+        )
+
+    def test_rollback_snapshot(self, created_vm_with_additional_disks):
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap1")
+        vmc.rollback_snapshot(created_vm_with_additional_disks, "snap1")
+
+    def test_purge_all_snapshots(self, created_vm_with_additional_disks):
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap1")
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap2")
+        vmc.purge_image(created_vm_with_additional_disks)
+        assert len(vmc.list_snapshots(created_vm_with_additional_disks)) == 0
+
+
+class TestAdditionalDisksClone:
+    def test_clone_vm_with_additional_disks(
+        self, created_vm_with_additional_disks, second_vm_name
+    ):
+        vmc.clone(
+            {
+                "name": created_vm_with_additional_disks,
+                "dst_name": second_vm_name,
+            }
+        )
+        assert second_vm_name in vmc.list_vms()
+        # Verify additional disks were cloned: snapshot operates on all
+        # disks in the Ceph group — would fail if additional disks are
+        # missing from the clone's group
+        vmc.create_snapshot(second_vm_name, "verifysnap")
+        vmc.remove_snapshot(second_vm_name, "verifysnap")
+
+    def test_clone_snapshot_preserved(
+        self, created_vm_with_additional_disks, second_vm_name
+    ):
+        vmc.create_snapshot(created_vm_with_additional_disks, "snap1")
+        vmc.clone(
+            {
+                "name": created_vm_with_additional_disks,
+                "dst_name": second_vm_name,
+            }
+        )
+        assert "snap1" in vmc.list_snapshots(second_vm_name)
+
+
+class TestAdditionalDisksCreateXml:
+    def test_additional_disks_in_xml(self):
+        xml = _read_test_xml()
+        result = vmc._create_xml(
+            xml, "myvm", additional_disks=["data_myvm_0", "data_myvm_1"]
+        )
+        root = ElementTree.fromstring(result)
+        disks = root.findall(".//disk[@type='network']")
+        assert len(disks) == 3  # system + 2 additional
+
+    def test_additional_disk_dev_names(self):
+        xml = _read_test_xml()
+        result = vmc._create_xml(
+            xml, "myvm", additional_disks=["data_myvm_0", "data_myvm_1"]
+        )
+        root = ElementTree.fromstring(result)
+        targets = [
+            d.find("target").get("dev")
+            for d in root.findall(".//disk[@type='network']")
+        ]
+        assert targets == ["vda", "vdb", "vdc"]
+
+    def test_no_additional_disks(self):
+        xml = _read_test_xml()
+        result = vmc._create_xml(xml, "myvm")
+        root = ElementTree.fromstring(result)
+        disks = root.findall(".//disk[@type='network']")
+        assert len(disks) == 1
+
+    def test_additional_disk_ceph_source(self):
+        xml = _read_test_xml()
+        result = vmc._create_xml(xml, "myvm", additional_disks=["data_myvm_0"])
+        assert "data_myvm_0" in result
 
 
 # ── console ──────────────────────────────────────────────────────────
