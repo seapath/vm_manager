@@ -88,6 +88,6 @@ Test scripts are in `vm_manager/helpers/tests/pacemaker/` and `vm_manager/helper
 - **License**: Apache-2.0 (all source files have copyright headers)
 - **Code review**: Gerrit (`.gitreview` → `g1.sfl.team`)
 - **VM naming**: alphanumeric only, validated by `_check_name()`
-- **Disk naming**: system disks prefixed with `system_` (`OS_DISK_PREFIX` constant)
+- **Disk naming**: system disks prefixed with `system_` (`OS_DISK_PREFIX`), additional disks prefixed with `data_` (`DATA_DISK_PREFIX`), e.g. `data_guest0_vdb`
 - **Flake8 config** (`.flake8`): ignores F401 in `__init__.py`, E501 and W503 globally
 - **Custom exceptions**: `RbdException`, `PacemakerException`

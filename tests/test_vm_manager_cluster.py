@@ -448,7 +448,7 @@ class TestSnapshots:
         with pytest.raises(ValueError, match="not datetime"):
             vmc.purge_image("vm", date="2025-01-01")
 
-        with pytest.raises(ValueError, match="positive integer"):
+        with pytest.raises(ValueError, match="non-negative integer"):
             vmc.purge_image("vm", number=-1)
 
 
