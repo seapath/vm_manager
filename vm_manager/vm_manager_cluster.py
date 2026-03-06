@@ -113,13 +113,18 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     xml_root = ElementTree.fromstring(xml)
     try:
         xml_root.remove(xml_root.findall("./name")[0])
-        xml_root.remove(xml_root.findall("./uuid")[0])
     except IndexError:
         pass
+    existing_uuid = xml_root.findall("./uuid")
+    if not existing_uuid or not existing_uuid[0].text:
+        try:
+            xml_root.remove(existing_uuid[0])
+        except IndexError:
+            pass
+        uuid_element = ElementTree.SubElement(xml_root, "uuid")
+        uuid_element.text = str(uuid.uuid4())
     name_element = ElementTree.SubElement(xml_root, "name")
     name_element.text = vm_name
-    name_element = ElementTree.SubElement(xml_root, "uuid")
-    name_element.text = str(uuid.uuid4())
     rbd_secret = None
     hosts_list = _get_ceph_hosts_xml()
     with LibVirtManager() as libvirt_manager:
@@ -429,6 +434,12 @@ def add_to_cluster(vm_options_with_nones):
         raise Exception(
             "Could not determine disk image path from VM " + src_name
         )
+    # Remove UUID when renaming to avoid conflicts with the source VM
+    if target_name != src_name:
+        existing_uuid = xml_root.find("uuid")
+        if existing_uuid is not None:
+            xml_root.remove(existing_uuid)
+
     clean_xml = ElementTree.tostring(xml_root, encoding="unicode")
 
     # If keeping the same name, remove from libvirt first to avoid conflicts
