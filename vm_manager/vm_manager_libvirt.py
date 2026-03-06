@@ -30,13 +30,18 @@ def _create_xml(xml, vm_name):
     xml_root = ElementTree.fromstring(xml)
     try:
         xml_root.remove(xml_root.findall("./name")[0])
-        xml_root.remove(xml_root.findall("./uuid")[0])
     except IndexError:
         pass
+    existing_uuid = xml_root.findall("./uuid")
+    if not existing_uuid or not existing_uuid[0].text:
+        try:
+            xml_root.remove(existing_uuid[0])
+        except IndexError:
+            pass
+        uuid_element = ElementTree.SubElement(xml_root, "uuid")
+        uuid_element.text = str(uuid.uuid4())
     name_element = ElementTree.SubElement(xml_root, "name")
     name_element.text = vm_name
-    name_element = ElementTree.SubElement(xml_root, "uuid")
-    name_element.text = str(uuid.uuid4())
 
     return ElementTree.tostring(xml_root).decode()
 

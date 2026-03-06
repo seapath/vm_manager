@@ -19,13 +19,22 @@ class TestCreateXml:
         result = vml._create_xml(xml, "myvm")
         assert "<name>myvm</name>" in result
 
-    def test_uuid_replaced(self, vm_xml_path):
+    def test_uuid_preserved_when_provided(self, vm_xml_path):
         with open(vm_xml_path) as f:
             xml = f.read()
         result = vml._create_xml(xml, "myvm")
-        # Original UUID should be gone
-        assert "7b48b1fe-066a-41a6-aef4-f0a9c028f719" not in result
+        assert "7b48b1fe-066a-41a6-aef4-f0a9c028f719" in result
+
+    def test_uuid_generated_when_not_provided(self, vm_xml_path):
+        with open(vm_xml_path) as f:
+            xml = f.read()
+        # Remove the uuid element from the XML
+        xml = xml.replace(
+            "<uuid>7b48b1fe-066a-41a6-aef4-f0a9c028f719</uuid>", ""
+        )
+        result = vml._create_xml(xml, "myvm")
         assert "<uuid>" in result
+        assert "7b48b1fe-066a-41a6-aef4-f0a9c028f719" not in result
 
 
 class TestCreate:
