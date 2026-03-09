@@ -30,7 +30,8 @@ class ParseMetaData(argparse.Action):
         setattr(namespace, self.dest, d)
 
 
-def main():
+def get_parser():
+    """Return the argument parser for vm_manager_cmd."""
     parser = argparse.ArgumentParser(description="vm_manager cli wrapper")
     parser.add_argument(
         "-v",
@@ -501,6 +502,11 @@ def main():
 
     # if cluster_mode end
 
+    return parser
+
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
     if args.verbose:
         logging.basicConfig(level=logging.DEBUG)

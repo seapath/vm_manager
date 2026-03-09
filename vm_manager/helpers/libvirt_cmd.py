@@ -10,7 +10,8 @@ import argparse
 from vm_manager.helpers.libvirt import LibVirtManager
 
 
-def main():
+def get_parser():
+    """Return the argument parser for libvirt_cmd."""
     parser = argparse.ArgumentParser(description="libvirt helper cli wrapper")
     subparsers = parser.add_subparsers(
         help="command", dest="command", required=True, metavar="command"
@@ -32,6 +33,11 @@ def main():
         help="full path where the configuration is exported",
     )
     define_parser.add_argument("xml", type=str, help="The XML file path")
+    return parser
+
+
+def main():
+    parser = get_parser()
     args = parser.parse_args()
     if args.command == "list":
         with LibVirtManager() as libvirt_manager:

@@ -9,10 +9,13 @@ RUN set -x \
         python3 \
         python3-flake8 \
         python3-setuptools \
+        python3-sphinx \
+        python3-pip \
         openjdk-8-jre-headless \
         unzip \
         wget \
-    && rm -rf /var/lib/apt/lists/
+    && rm -rf /var/lib/apt/lists/ \
+    && pip3 install --no-cache-dir sphinx-argparse
 
 ARG sonar_version=4.7.0.2747
 ARG sonar_repo=https://binaries.sonarsource.com/Distribution/sonar-scanner-cli

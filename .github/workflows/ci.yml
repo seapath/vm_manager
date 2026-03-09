@@ -55,3 +55,9 @@ jobs:
 
       - name: Run tests
         run: sg libvirt -c "pytest tests/ -v --tb=short"
+
+      - name: Install documentation dependencies
+        run: pip install ".[docs]"
+
+      - name: Build documentation
+        run: sphinx-build -b html docs/ docs/_build/html

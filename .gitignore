@@ -13,6 +13,9 @@ __pycache__/
 # Ignore IDE files
 /.idea/
 
+# Ignore generated documentation
+/docs/_build/
+
 # Ignore sonar files
 /.scannerwork/
 /.sonar/

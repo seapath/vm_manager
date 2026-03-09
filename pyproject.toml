@@ -19,6 +19,7 @@ readme = "README.md"
 
 [project.optional-dependencies]
 test = ["pytest>=7.0"]
+docs = ["sphinx>=4.0", "sphinx-argparse"]
 
 [tool.setuptools]
 packages = ["vm_manager", "vm_manager.helpers", "vm_manager.helpers.tests.pacemaker", "vm_manager.helpers.tests.rbd_manager"]
