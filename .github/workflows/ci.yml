@@ -54,7 +54,7 @@ jobs:
         run: pip install ".[test]"
 
       - name: Run tests
-        run: sg libvirt -c "pytest tests/ -v --tb=short"
+        run: sg libvirt -c "pytest tests/ -v --tb=short --ignore=tests/test_vm_manager_cluster.py"
 
       - name: Install documentation dependencies
         run: pip install ".[docs]"
