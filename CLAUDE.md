@@ -40,6 +40,22 @@ cqfd -b flake           # flake8
 cqfd -b check           # pylint
 ```
 
+## Documentation
+
+```bash
+# Generate HTML docs locally (output: docs/_build/html/)
+pip install .[docs]
+sphinx-build -b html docs docs/_build/html
+
+# Via cqfd
+cqfd init
+cqfd -b docs
+```
+
+Docs structure: `docs/overview.rst` (project overview), `docs/cli.rst`
+(CLI reference via sphinx-argparse), `docs/api.rst` (Python API via autodoc).
+sphinx-argparse requires `get_parser()` functions in both CLI modules.
+
 ## Tests
 
 Tests are integration scripts requiring a real Ceph/Pacemaker cluster. Run individually:

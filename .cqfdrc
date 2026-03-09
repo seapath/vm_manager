@@ -2,7 +2,7 @@
 org='rte'
 name='vm_manager'
 
-flavors='check sonar check_format format flake'
+flavors='check sonar check_format format flake docs'
 
 [build]
 command='/usr/bin/pip install --root-user-action=ignore --prefix=. .'
@@ -27,3 +27,6 @@ command='black -l 79 -t py38 .'
 
 [flake]
 command='python3 -m flake8 --ignore=E501,W503'
+
+[docs]
+command='sphinx-build -b html docs docs/_build/html'
