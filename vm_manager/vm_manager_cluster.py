@@ -372,6 +372,71 @@ def create(vm_options_with_nones):
     logger.info("VM " + vm_options["name"] + " created successfully")
 
 
+def add_to_cluster(vm_options_with_nones):
+    """
+    Add an existing libvirt VM to the cluster.
+    Retrieves the VM XML from libvirt, strips its disk devices, and calls
+    create() to register it in Ceph/Pacemaker.
+    :param vm_options_with_nones: dict with keys:
+        - name: existing libvirt VM name (required)
+        - image: path to the disk image to import into Ceph (optional,
+          defaults to the disk path from the libvirt VM definition)
+        - new_name: optional new VM name (if omitted, keeps original name)
+        - plus all optional create() args (disable, force, metadata, ...)
+    """
+    vm_options = {
+        k: v for k, v in vm_options_with_nones.items() if v is not None
+    }
+    src_name = vm_options["name"]
+    target_name = vm_options.get("new_name", src_name)
+    _check_name(target_name)
+
+    with LibVirtManager() as lvm:
+        if src_name not in lvm.list():
+            raise Exception("VM " + src_name + " does not exist in libvirt")
+        xml = lvm._conn.lookupByName(src_name).XMLDesc(0)
+
+    # Strip existing disk devices so _create_xml can add the Ceph RBD disk
+    # and extract the disk path if not provided
+    xml_root = ElementTree.fromstring(xml)
+    devices = xml_root.find("devices")
+    if devices is not None:
+        disks = devices.findall("disk")
+        if len(disks) > 1:
+            raise Exception(
+                "VM "
+                + src_name
+                + " has more than one disk, which is not"
+                + " supported in cluster mode"
+            )
+        for disk in disks:
+            if "image" not in vm_options:
+                source = disk.find("source")
+                if source is not None:
+                    disk_path = source.get("file") or source.get("dev")
+                    if disk_path:
+                        vm_options["image"] = disk_path
+            devices.remove(disk)
+    if "image" not in vm_options:
+        raise Exception(
+            "Could not determine disk image path from VM " + src_name
+        )
+    clean_xml = ElementTree.tostring(xml_root, encoding="unicode")
+
+    # If keeping the same name, remove from libvirt first to avoid conflicts
+    if target_name == src_name:
+        with LibVirtManager() as lvm:
+            domain = lvm._conn.lookupByName(src_name)
+            if domain.isActive():
+                domain.destroy()
+            lvm.undefine(src_name)
+
+    vm_options["name"] = target_name
+    vm_options["base_xml"] = clean_xml
+    create(vm_options)
+    logger.info("VM " + src_name + " imported as " + target_name)
+
+
 def remove(vm_name):
     """
     Remove a VM from cluster

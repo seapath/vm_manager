@@ -117,6 +117,10 @@ def main():
             "remove_pacemaker_remote",
             help="Remove a pacemaker-remote resource for the VM",
         )
+        import_parser = subparsers.add_parser(
+            "add-to-cluster",
+            help="Add an existing libvirt VM to the cluster",
+        )
 
     for name, subparser in subparsers.choices.items():
         if name not in ("list", "console"):
@@ -192,7 +196,7 @@ def main():
             "must be a valid type recognized by libvirt (default virtio)",
         )
 
-        for p in [create_parser, clone_parser]:
+        for p in [create_parser, clone_parser, import_parser]:
             p.add_argument(
                 "--disable",
                 action="store_true",
@@ -351,6 +355,44 @@ def main():
 
         clone_parser.add_argument(
             "--xml", type=str, required=False, help="VM libvirt XML path"
+        )
+
+        import_parser.add_argument(
+            "-i",
+            "--image",
+            type=str,
+            required=False,
+            default=None,
+            help="VM image disk to import into Ceph (default: use the disk"
+            " from the libvirt VM definition)",
+        )
+        import_parser.add_argument(
+            "-p",
+            "--progress",
+            action="store_true",
+            required=False,
+            help="Print disk import progress bar",
+        )
+        import_parser.add_argument(
+            "--disk-bus",
+            type=str,
+            required=False,
+            default="virtio",
+            help="Set the image disk bus type (default virtio)",
+        )
+        import_parser.add_argument(
+            "--new-name",
+            type=str,
+            required=False,
+            default=None,
+            help="New VM name (if omitted, keeps the original libvirt VM "
+            "name)",
+        )
+        import_parser.add_argument(
+            "--nostart",
+            action="store_true",
+            required=False,
+            help="Do not start the VM after import",
         )
 
         create_snap_parser.add_argument(
@@ -536,6 +578,14 @@ def main():
             remote_node_port=args.remote_port,
             remote_node_timeout=args.remote_timeout,
         )
+    elif args.command == "add-to-cluster":
+        args.live_migration = args.enable_live_migration
+        args.crm_config_cmd = args.add_crm_config_cmd
+        if "disable" in args and args.disable:
+            args.enable = not args.disable
+        else:
+            args.enable = True
+        vm_manager.add_to_cluster(vars(args))
     elif args.command == "autostart":
         vm_manager.autostart(args.name, args.enable)
     elif args.command == "console":
