@@ -1,6 +1,8 @@
 # Copyright (C) 2021, RTE (http://www.rte-france.com)
 # SPDX-License-Identifier: Apache-2.0
 
+from .exceptions import UuidConflictError  # noqa: F401
+
 try:
     from .helpers.rbd_manager import RbdManager
     from .helpers.pacemaker import Pacemaker
@@ -12,6 +14,7 @@ else:
 if cluster_mode:
     from .vm_manager_cluster import (
         list_vms,
+        list_all_uuids,
         start,
         stop,
         create,
@@ -38,6 +41,7 @@ if cluster_mode:
 else:
     from .vm_manager_libvirt import (
         list_vms,
+        list_all_uuids,
         console,
         create,
         remove,

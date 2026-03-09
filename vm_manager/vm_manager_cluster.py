@@ -18,6 +18,7 @@ import json
 from .helpers.rbd_manager import RbdManager
 from .helpers.pacemaker import Pacemaker
 from .helpers.libvirt import LibVirtManager
+from .exceptions import UuidConflictError
 
 XML_PACEMAKER_PATH = "/etc/pacemaker"
 
@@ -33,6 +34,29 @@ logger = logging.getLogger(__name__)
 """
 A module to manage VMs in Seapath cluster.
 """
+
+
+def list_all_uuids():
+    """
+    Return dict mapping UUID strings to VM names by reading XML
+    metadata from each VM's system disk in the RBD cluster.
+    """
+    uuids = {}
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        for vm_name in rbd.list_groups():
+            disk_name = OS_DISK_PREFIX + vm_name
+            try:
+                xml_str = rbd.get_image_metadata(disk_name, "xml")
+                xml_root = ElementTree.fromstring(xml_str)
+                vm_uuid = xml_root.findtext("uuid")
+                if vm_uuid:
+                    uuids[vm_uuid] = vm_name
+            except Exception:
+                logger.warning(
+                    "Could not read UUID for VM %s, skipping",
+                    vm_name,
+                )
+    return uuids
 
 
 def _check_name(name):
@@ -347,6 +371,23 @@ def create(vm_options_with_nones):
         progress = vm_options["progress"]
     except KeyError:
         progress = False
+
+    # Check for UUID collision before importing the disk
+    xml = _create_xml(
+        vm_options["base_xml"],
+        vm_options["name"],
+        vm_options.get("disk_bus", "virtio"),
+    )
+    xml_root = ElementTree.fromstring(xml)
+    vm_uuid = xml_root.findtext("uuid")
+    if vm_uuid:
+        existing = list_all_uuids()
+        if vm_uuid in existing:
+            raise UuidConflictError(
+                "UUID {} is already used by VM {}".format(
+                    vm_uuid, existing[vm_uuid]
+                )
+            )
 
     # Create VM group
     if "force" not in vm_options:

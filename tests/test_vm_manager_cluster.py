@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ElementTree
 import pytest
 
 from vm_manager import vm_manager_cluster as vmc
+from vm_manager.exceptions import UuidConflictError
 from vm_manager.helpers.libvirt import LibVirtManager
 
 TESTDATA_XML_PATH = os.path.join(
@@ -23,6 +24,22 @@ TESTDATA_XML_PATH = os.path.join(
 
 
 def _read_test_xml():
+    """Read the test XML template with UUID stripped.
+
+    Removing the UUID ensures each test VM gets a fresh random UUID
+    and avoids collisions with existing VMs on the cluster.
+    """
+    with open(TESTDATA_XML_PATH) as f:
+        xml = f.read()
+    root = ElementTree.fromstring(xml)
+    uuid_el = root.find("uuid")
+    if uuid_el is not None:
+        root.remove(uuid_el)
+    return ElementTree.tostring(root, encoding="unicode")
+
+
+def _read_test_xml_with_uuid():
+    """Read the test XML template preserving the predefined UUID."""
     with open(TESTDATA_XML_PATH) as f:
         return f.read()
 
@@ -252,19 +269,33 @@ class TestCreateXml:
         result = vmc._create_xml(xml, "myvm")
         assert "<name>myvm</name>" in result
 
-    def test_uuid_preserved_when_provided(self):
-        xml = _read_test_xml()
+    def test_predefined_uuid_preserved(self):
+        xml = _read_test_xml_with_uuid()
         result = vmc._create_xml(xml, "myvm")
-        assert "7b48b1fe-066a-41a6-aef4-f0a9c028f719" in result
+        root = ElementTree.fromstring(result)
+        assert root.findtext("uuid") == "7b48b1fe-066a-41a6-aef4-f0a9c028f719"
 
-    def test_uuid_generated_when_not_provided(self):
-        xml = _read_test_xml()
-        xml = xml.replace(
-            "<uuid>7b48b1fe-066a-41a6-aef4-f0a9c028f719</uuid>", ""
-        )
+    def test_empty_uuid_generates_new(self):
+        xml = _read_test_xml_with_uuid()
+        xml = xml.replace("7b48b1fe-066a-41a6-aef4-f0a9c028f719", "")
         result = vmc._create_xml(xml, "myvm")
-        assert "<uuid>" in result
-        assert "7b48b1fe-066a-41a6-aef4-f0a9c028f719" not in result
+        root = ElementTree.fromstring(result)
+        vm_uuid = root.findtext("uuid")
+        assert vm_uuid
+        assert vm_uuid != ""
+
+    def test_missing_uuid_generates_new(self):
+        xml = _read_test_xml()
+        root = ElementTree.fromstring(xml)
+        uuid_el = root.find("uuid")
+        if uuid_el is not None:
+            root.remove(uuid_el)
+        xml_no_uuid = ElementTree.tostring(root).decode()
+        result = vmc._create_xml(xml_no_uuid, "myvm")
+        root = ElementTree.fromstring(result)
+        vm_uuid = root.findtext("uuid")
+        assert vm_uuid
+        assert vm_uuid != ""
 
     def test_rbd_disk_added(self):
         xml = _read_test_xml()
@@ -394,6 +425,51 @@ class TestRemove:
         )
         vmc.remove(vm_name)
         assert vmc.status(vm_name) == "Undefined"
+
+
+# ── list_all_uuids ──────────────────────────────────────────────────
+
+
+class TestListAllUuids:
+    def test_returns_dict(self):
+        result = vmc.list_all_uuids()
+        assert isinstance(result, dict)
+
+    def test_created_vm_uuid_appears(self, created_vm):
+        uuids = vmc.list_all_uuids()
+        assert created_vm in uuids.values()
+
+
+# ── UUID collision ──────────────────────────────────────────────────
+
+
+class TestUuidCollision:
+    def test_duplicate_uuid_raises(self, vm_name, qcow2_image):
+        xml = _read_test_xml_with_uuid()
+        # Create first VM with the predefined UUID
+        vmc.create(
+            {
+                "name": vm_name,
+                "image": qcow2_image,
+                "base_xml": xml,
+                "force": True,
+            }
+        )
+        # Attempt to create second VM with same UUID — should conflict
+        second_name = vm_name + "dup"
+        with pytest.raises(UuidConflictError):
+            vmc.create(
+                {
+                    "name": second_name,
+                    "image": qcow2_image,
+                    "base_xml": xml,
+                }
+            )
+        # Clean up second VM if somehow created
+        try:
+            vmc.remove(second_name)
+        except Exception:
+            pass
 
 
 # ── Snapshots ────────────────────────────────────────────────────────
