@@ -33,6 +33,7 @@ if cluster_mode:
         add_colocation,
         remove_pacemaker_remote,
         add_pacemaker_remote,
+        add_to_cluster,
     )
 else:
     from .vm_manager_libvirt import (
