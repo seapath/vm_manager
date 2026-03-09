@@ -52,6 +52,12 @@ class LibVirtManager:
         """
         return [x.name() for x in self._conn.listAllDomains()]
 
+    def list_uuids(self):
+        """
+        Return dict mapping UUID strings to domain names.
+        """
+        return {d.UUIDString(): d.name() for d in self._conn.listAllDomains()}
+
     def get_virsh_secrets(self):
         """
         Get the virsh secrets

@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from .helpers.libvirt import LibVirtManager
+from .exceptions import UuidConflictError
 import xml.etree.ElementTree as ElementTree
 import uuid
 import logging
@@ -20,6 +21,14 @@ def list_vms():
     """
     with LibVirtManager() as lvm:
         return lvm.list()
+
+
+def list_all_uuids():
+    """
+    Return dict mapping UUID strings to VM names for all local VMs.
+    """
+    with LibVirtManager() as lvm:
+        return lvm.list_uuids()
 
 
 def _create_xml(xml, vm_name):
@@ -54,6 +63,17 @@ def create(args):
     :param base_xml:  the VM libvirt xml configuration
     """
     xml = _create_xml(args.get("base_xml"), args.get("name"))
+
+    xml_root = ElementTree.fromstring(xml)
+    vm_uuid = xml_root.findtext("uuid")
+    if vm_uuid:
+        existing = list_all_uuids()
+        if vm_uuid in existing:
+            raise UuidConflictError(
+                "UUID {} is already used by VM {}".format(
+                    vm_uuid, existing[vm_uuid]
+                )
+            )
 
     with LibVirtManager() as lvm:
         lvm.define(xml)
