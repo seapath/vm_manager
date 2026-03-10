@@ -15,6 +15,7 @@ OS_DISK_PREFIX = "system_"
 def list_vms():
     """
     Return a list of the VMs.
+
     :return: the VM list
     """
     with LibVirtManager() as lvm:
@@ -43,6 +44,7 @@ def _create_xml(xml, vm_name):
 def create(args):
     """
     Create a new VM
+
     :param vm_name: the VM name
     :param base_xml:  the VM libvirt xml configuration
     """
@@ -59,6 +61,7 @@ def create(args):
 def remove(vm_name):
     """
     Remove a VM
+
     :param vm_name: the VM name to be removed
     """
     with LibVirtManager() as lvm:
@@ -75,6 +78,7 @@ def start(vm_name):
     """
     Start or resume a stopped or paused VM
     The VM must enabled before being started
+
     :param vm_name: the VM to be started
     :param autostart: if True, enable autostart on the VM
     """
@@ -87,6 +91,7 @@ def start(vm_name):
 def autostart(vm_name, enabled):
     """
     Set the autostart flag on a VM
+
     :param vm_name: the VM name
     :param enabled: True to enable autostart, False to disable
     """
@@ -100,6 +105,7 @@ def autostart(vm_name, enabled):
 def stop(vm_name, force=False):
     """
     Stop a VM
+
     :param vm_name: the VM to be stopped
     :param force: Set to True to force stop (virtually unplug the VM)
     """
@@ -115,9 +121,10 @@ def stop(vm_name, force=False):
 def status(vm_name):
     """
     Get the VM status
+
     :param vm_name: the VM for which the status must be checked
-    :return:    the status of the VM, among Starting, Started, Paused,
-                Stopped, Stopping, Undefined and FAILED
+    :return: the status of the VM, among Starting, Started, Paused, Stopped,
+             Stopping, Undefined and FAILED
     """
     with LibVirtManager() as lvm:
         return lvm.status(vm_name)
@@ -126,6 +133,7 @@ def status(vm_name):
 def console(vm_name):
     """
     Open a virsh console for the given VM
+
     :param vm_name: the VM name to open the console
     """
     with LibVirtManager() as lvm:

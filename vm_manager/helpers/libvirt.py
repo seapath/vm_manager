@@ -47,13 +47,15 @@ class LibVirtManager:
     def list(self):
         """
         List all VM
-        :return the name list of all defined libvirt domain
+
+        :return: the name list of all defined libvirt domain
         """
         return [x.name() for x in self._conn.listAllDomains()]
 
     def get_virsh_secrets(self):
         """
         Get the virsh secrets
+
         :return: a dictionary of virsh secrets
         """
         secrets = {}
@@ -66,6 +68,7 @@ class LibVirtManager:
         Validate and create a VM from xml configuration
 
         Raise an error if the XML is not valid.
+
         :param xml: the libvirt XML string
         """
         try:
@@ -77,6 +80,7 @@ class LibVirtManager:
     def undefine(self, vm_name):
         """
         Remove a VM
+
         :param vm_name: the VM to undefined
         """
         domain = self._conn.lookupByName(vm_name)
@@ -85,6 +89,7 @@ class LibVirtManager:
     def set_autostart(self, vm_name, enabled):
         """
         Set the autostart flag on a VM
+
         :param vm_name: the VM name
         :param enabled: True to enable autostart, False to disable
         """
@@ -93,6 +98,7 @@ class LibVirtManager:
     def start(self, vm_name):
         """
         Start a VM
+
         :param vm_name: the VM to start
         """
         self._conn.lookupByName(vm_name).create()
@@ -100,6 +106,7 @@ class LibVirtManager:
     def stop(self, vm_name):
         """
         Stop a VM
+
         :param vm_name: the VM to be stopped
         """
         self._conn.lookupByName(vm_name).shutdown()
@@ -107,6 +114,7 @@ class LibVirtManager:
     def force_stop(self, vm_name):
         """
         Forces a VM to stop
+
         :param vm_name: the VM to be stopped
         """
         self._conn.lookupByName(vm_name).destroy()
@@ -114,9 +122,10 @@ class LibVirtManager:
     def status(self, vm_name):
         """
         Get the VM status
+
         :param vm_name: the VM for which the status must be checked
-        :return:    the status of the VM, among Starting, Started, Paused,
-                    Stopped, Stopping, Undefined and FAILED
+        :return: the status of the VM, among Starting, Started, Paused,
+                 Stopped, Stopping, Undefined and FAILED
         """
         if vm_name not in self.list():
             logger.info(vm_name + "does not exist")
@@ -145,6 +154,7 @@ class LibVirtManager:
     def console(self, vm_name):
         """
         Open a console on a VM
+
         :param vm_name: the VM to open the console
         """
         uri = self._conn.getURI()
@@ -165,6 +175,7 @@ class LibVirtManager:
     def export_configuration(domain, xml_path):
         """
         Dump the libvirt XML configuration
+
         :param domain: the domain whose the configuration is exported
         :param xml_path: the path where the XML configuration will be exported
         """
