@@ -102,9 +102,12 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     Creates a libvirt configuration file according to xml and
     disk_name parameters.
 
-    target_disk_bus: bus type of the VM system disk inside the VM.
-        Should be a valid type recognized by libvirt, see https://libvirt.org/formatdomain.html#devices.
-        Default: virtio
+    :param xml: the base libvirt XML string to be used as template for the VM
+                configuration
+    :param vm_name: the VM name to be set in the libvirt XML configuration
+    :param: target_disk_bus: bus type of the VM system disk inside the VM.
+            Should be a valid type recognized by libvirt, see https://libvirt.org/formatdomain.html#devices.
+            Default: virtio
     """
     disk_name = OS_DISK_PREFIX + vm_name
     xml_root = ElementTree.fromstring(xml)
@@ -279,6 +282,7 @@ def _get_remote_nodes():
 def list_vms(enabled=False):
     """
     Return a list of the VMs.
+
     :param enabled: if True only list enabled VMs, otherwise list all of them
     :return: the VM list
     """
@@ -292,6 +296,7 @@ def list_vms(enabled=False):
 def create(vm_options_with_nones):
     """
     Create a new VM
+
     The VM will never switch to another host
     """
     # Validate parameters and required files
@@ -375,14 +380,17 @@ def create(vm_options_with_nones):
 def add_to_cluster(vm_options_with_nones):
     """
     Add an existing libvirt VM to the cluster.
+
     Retrieves the VM XML from libvirt, strips its disk devices, and calls
     create() to register it in Ceph/Pacemaker.
-    :param vm_options_with_nones: dict with keys:
-        - name: existing libvirt VM name (required)
-        - image: path to the disk image to import into Ceph (optional,
+
+    :param vm_options_with_nones: dict with the following keys:
+
+        - **name**: existing libvirt VM name (required)
+        - **image**: path to the disk image to import into Ceph (optional,
           defaults to the disk path from the libvirt VM definition)
-        - new_name: optional new VM name (if omitted, keeps original name)
-        - plus all optional create() args (disable, force, metadata, ...)
+        - **new_name**: optional new VM name (if omitted, keeps original name)
+        - plus all optional ``create()`` args (disable, force, metadata, ...)
     """
     vm_options = {
         k: v for k, v in vm_options_with_nones.items() if v is not None
@@ -440,6 +448,7 @@ def add_to_cluster(vm_options_with_nones):
 def remove(vm_name):
     """
     Remove a VM from cluster
+
     :param vm_name: the VM name to be removed
     """
 
@@ -473,6 +482,7 @@ def remove(vm_name):
 def enable_vm(vm_name, nostart=False):
     """
     Enable a VM in Pacemaker
+
     :param vm_name: the VM name to be enabled
     """
 
@@ -664,6 +674,7 @@ def enable_vm(vm_name, nostart=False):
 def disable_vm(vm_name):
     """
     Stop and disable a VM in Pacemaker without removing it
+
     :param vm_name: the VM name to be disabled
     """
     with Pacemaker(vm_name) as p:
@@ -698,6 +709,7 @@ def start(vm_name):
     """
     Start or resume a stopped or paused VM
     The VM must enabled before being started
+
     :param vm_name: the VM to be started
     """
 
@@ -719,6 +731,7 @@ def start(vm_name):
 def is_enabled(vm_name):
     """
     Ask if the VM is enabled in Pacemaker
+
     :param vm_name: the vm_name to be checked
     :return: True if the VM is enabled, False otherwise
     """
@@ -728,6 +741,7 @@ def is_enabled(vm_name):
 def status(vm_name):
     """
     Get the VM status
+
     :param vm_name: the VM for which the status must be checked
     :return: the status of the VM, among Starting, Started, Paused,
              Stopped, Stopping, Disabled, Undefined and FAILED
@@ -746,6 +760,7 @@ def status(vm_name):
 def stop(vm_name, force=False):
     """
     Stop a VM
+
     :param vm_name: the VM to be stopped
     """
     with Pacemaker(vm_name) as p:
@@ -948,6 +963,7 @@ def create_snapshot(vm_name, snapshot_name):
     """
     Create a snapshot. The snapshot can be a system disk snapshot only or
     a VM snapshot (os disk and data disk).
+
     :param vm_name: the VM to be snapshot
     :param snapshot_name: the snapshot name
     """
@@ -977,6 +993,7 @@ def create_snapshot(vm_name, snapshot_name):
 def remove_snapshot(vm_name, snapshot_name):
     """
     Remove a snapshot
+
     :param vm_name: the VM from which the snapshot must be removed
     :param snapshot_name: the name of the snapshot to be removed
     """
@@ -995,6 +1012,7 @@ def remove_snapshot(vm_name, snapshot_name):
 def list_snapshots(vm_name):
     """
     Get the snapshot list of a VM.
+
     :param vm_name: the VM name from which to list the snapshots
     :return: the snapshot list
     """
@@ -1006,6 +1024,7 @@ def list_snapshots(vm_name):
 def purge_image(vm_name, date=None, number=None):
     """
     Remove all snapshots of the given type on the given VM.
+
     :param vm_name: the VM name to be purged
     :param date: date until snapshots must be removed
     :param number: number of snapshots to delete starting from the oldest
@@ -1074,6 +1093,7 @@ def purge_image(vm_name, date=None, number=None):
 def rollback_snapshot(vm_name, snapshot_name):
     """
     Restore a VM to a previous state based on the given snapshot.
+
     :param vm_name: the VM name to be restored
     :param snapshot_name: the snapshot name to be used for rollback
     """
@@ -1108,6 +1128,7 @@ def rollback_snapshot(vm_name, snapshot_name):
 def list_metadata(vm_name):
     """
     List all metadata associated to the given VM
+
     :param vm_name: the VM name from which the metadata will be listed
     :return: the metadata list
     """
@@ -1119,6 +1140,7 @@ def list_metadata(vm_name):
 def get_metadata(vm_name, metadata_name):
     """
     Get a metadata value
+
     :param vm_name: the VM name where the metadata is stored
     :param metadata_name: the metadata name to get
     :return: the metadata value (a str)
@@ -1132,6 +1154,7 @@ def set_metadata(vm_name, metadata_name, metadata_value):
     """
     Set a metadata with the given value. Create it if the metadata does not
     exist yet
+
     :param vm_name: the VM name where the metadata will be stored
     :param metadata_name: the metadata name to be set
     :param metadata_value: the metadata value to set
@@ -1156,13 +1179,16 @@ def set_metadata(vm_name, metadata_name, metadata_value):
 def add_colocation(vm_name, *resources, strong=False):
     """
     Add a colocation constraint to a VM.
+
     :param vm_name: the VM name to constraint
     :param resources: VMs or other Pacemaker resources to be colocated with the
-    VM. The resource must already be created and if the resource is a VM, then
-    it must be enabled. Disabling a VM will remove its constraints.
+                      VM. The resource must already be created and if the
+                      resource is a VM, then it must be enabled. Disabling a VM
+                      will remove its constraints.
     :param strong: If strong is set to True, add a strong colocation. In a
-    strong colocation the VM will be started only if all resources colocated
-    with it are started too and the VM will stop if one of them is stopped.
+                   strong colocation the VM will be started only if all
+                   resources colocated with it are started too and the VM will
+                   stop if one of them is stopped.
     """
     _check_name(vm_name)
     with Pacemaker(vm_name) as p:
@@ -1172,6 +1198,7 @@ def add_colocation(vm_name, *resources, strong=False):
 def remove_pacemaker_remote(vm_name):
     """
     Remove the pacemaker remote configuration from the VM.
+
     :param vm_name: the VM name to remove the pacemaker remote configuration
     """
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
@@ -1199,6 +1226,7 @@ def add_pacemaker_remote(
 ):
     """
     Add a pacemaker-remote configuration to the VM.
+
     :param vm_name: the VM name to add the pacemaker remote configuration
     :param remote_node: name to identify the pacemaker-remote resource
     :param remote_node_address: the address of the pacemaker-remote resource
@@ -1233,6 +1261,7 @@ def add_pacemaker_remote(
 def console(vm_name, ssh_user="libvirtadmin"):
     """
     Open a virsh console for the given VM
+
     :param vm_name: the VM name to open the console
     """
     # First we need to get the hypervisor where the VM is running

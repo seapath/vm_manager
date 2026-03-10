@@ -289,6 +289,7 @@ class Pacemaker:
     def disable_location(self, node):
         """
         Define on which nodes a resource must never be run.
+
         Note: It will be used to restrict the VM on the hypervisors.
         """
         args = [
@@ -342,8 +343,9 @@ class Pacemaker:
 
     def default_location(self, node):
         """
-        Set the VM default location. The VM will be deployed on the given node
-        unless the node is up.
+        Set the VM default location.
+
+        The VM will be deployed on the given node unless the node is up.
         """
         args = [
             "crm",
@@ -358,6 +360,7 @@ class Pacemaker:
     def wait_for(self, state, periods=0.2, nb_periods=100):
         """
         Wait for a VM enter the given state.
+
         Check every period in s.
         """
         ticker = threading.Event()
@@ -386,6 +389,7 @@ class Pacemaker:
     def add_meta(self, key, value):
         """
         Add a meta to the resource
+
         :param meta: the meta to add
         """
         args = ["crm", "resource", "meta", self._resource, "set", key, value]
@@ -395,6 +399,7 @@ class Pacemaker:
     def remove_meta(self, key):
         """
         Remove a meta from the resource
+
         :param meta: the meta to remove
         """
         args = [
@@ -412,6 +417,7 @@ class Pacemaker:
     def is_valid_host(host):
         """
         Check if a host is found in the cluster.
+
         :param host: the host to test
         :return: True if the host is in the cluster, false otherwise
         """
@@ -424,6 +430,7 @@ class Pacemaker:
     def find_resource(resource):
         """
         Find where a resource is running.
+
         :param resource: the resource to find
         :return: the node where the resource is running or None if the resource
                  is not running or not found
