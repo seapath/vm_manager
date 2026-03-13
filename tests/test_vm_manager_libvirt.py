@@ -39,6 +39,7 @@ class TestCreateXml:
         vm_uuid = root.findtext("uuid")
         assert vm_uuid
         assert vm_uuid != ""
+        assert vm_uuid != "7b48b1fe-066a-41a6-aef4-f0a9c028f719"
 
     def test_missing_uuid_generates_new(self, vm_xml_path):
         with open(vm_xml_path) as f:
@@ -54,6 +55,7 @@ class TestCreateXml:
         vm_uuid = root.findtext("uuid")
         assert vm_uuid
         assert vm_uuid != ""
+        assert vm_uuid != "7b48b1fe-066a-41a6-aef4-f0a9c028f719"
 
 
 class TestCreate:
