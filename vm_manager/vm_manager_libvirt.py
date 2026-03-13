@@ -3,9 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from .helpers.libvirt import LibVirtManager
-from .exceptions import UuidConflictError
+from .xml_utils import prepare_xml_base, check_uuid_conflict
 import xml.etree.ElementTree as ElementTree
-import uuid
 import logging
 
 logger = logging.getLogger(__name__)
@@ -36,22 +35,7 @@ def _create_xml(xml, vm_name):
     Creates a libvirt configuration file according to xml and
     vm_name parameters.
     """
-    xml_root = ElementTree.fromstring(xml)
-    try:
-        xml_root.remove(xml_root.findall("./name")[0])
-    except IndexError:
-        pass
-    existing_uuid = xml_root.findall("./uuid")
-    if not existing_uuid or not existing_uuid[0].text:
-        try:
-            xml_root.remove(existing_uuid[0])
-        except IndexError:
-            pass
-        uuid_element = ElementTree.SubElement(xml_root, "uuid")
-        uuid_element.text = str(uuid.uuid4())
-    name_element = ElementTree.SubElement(xml_root, "name")
-    name_element.text = vm_name
-
+    xml_root = prepare_xml_base(xml, vm_name)
     return ElementTree.tostring(xml_root).decode()
 
 
@@ -63,17 +47,7 @@ def create(args):
     :param base_xml:  the VM libvirt xml configuration
     """
     xml = _create_xml(args.get("base_xml"), args.get("name"))
-
-    xml_root = ElementTree.fromstring(xml)
-    vm_uuid = xml_root.findtext("uuid")
-    if vm_uuid:
-        existing = list_all_uuids()
-        if vm_uuid in existing:
-            raise UuidConflictError(
-                "UUID {} is already used by VM {}".format(
-                    vm_uuid, existing[vm_uuid]
-                )
-            )
+    check_uuid_conflict(xml, list_all_uuids)
 
     with LibVirtManager() as lvm:
         lvm.define(xml)

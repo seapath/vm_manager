@@ -6,7 +6,6 @@
 import os
 import sys
 import logging
-import uuid
 import re
 import datetime
 from errno import ENOENT
@@ -18,7 +17,7 @@ import json
 from .helpers.rbd_manager import RbdManager
 from .helpers.pacemaker import Pacemaker
 from .helpers.libvirt import LibVirtManager
-from .exceptions import UuidConflictError
+from .xml_utils import prepare_xml_base, check_uuid_conflict
 
 XML_PACEMAKER_PATH = "/etc/pacemaker"
 
@@ -134,21 +133,7 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
             Default: virtio
     """
     disk_name = OS_DISK_PREFIX + vm_name
-    xml_root = ElementTree.fromstring(xml)
-    try:
-        xml_root.remove(xml_root.findall("./name")[0])
-    except IndexError:
-        pass
-    existing_uuid = xml_root.findall("./uuid")
-    if not existing_uuid or not existing_uuid[0].text:
-        try:
-            xml_root.remove(existing_uuid[0])
-        except IndexError:
-            pass
-        uuid_element = ElementTree.SubElement(xml_root, "uuid")
-        uuid_element.text = str(uuid.uuid4())
-    name_element = ElementTree.SubElement(xml_root, "name")
-    name_element.text = vm_name
+    xml_root = prepare_xml_base(xml, vm_name)
     rbd_secret = None
     hosts_list = _get_ceph_hosts_xml()
     with LibVirtManager() as libvirt_manager:
@@ -378,16 +363,7 @@ def create(vm_options_with_nones):
         vm_options["name"],
         vm_options.get("disk_bus", "virtio"),
     )
-    xml_root = ElementTree.fromstring(xml)
-    vm_uuid = xml_root.findtext("uuid")
-    if vm_uuid:
-        existing = list_all_uuids()
-        if vm_uuid in existing:
-            raise UuidConflictError(
-                "UUID {} is already used by VM {}".format(
-                    vm_uuid, existing[vm_uuid]
-                )
-            )
+    check_uuid_conflict(xml, list_all_uuids)
 
     # Create VM group
     if "force" not in vm_options:
