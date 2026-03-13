@@ -283,19 +283,16 @@ class TestCreateXml:
         vm_uuid = root.findtext("uuid")
         assert vm_uuid
         assert vm_uuid != ""
+        assert vm_uuid != "7b48b1fe-066a-41a6-aef4-f0a9c028f719"
 
     def test_missing_uuid_generates_new(self):
         xml = _read_test_xml()
-        root = ElementTree.fromstring(xml)
-        uuid_el = root.find("uuid")
-        if uuid_el is not None:
-            root.remove(uuid_el)
-        xml_no_uuid = ElementTree.tostring(root).decode()
-        result = vmc._create_xml(xml_no_uuid, "myvm")
+        result = vmc._create_xml(xml, "myvm")
         root = ElementTree.fromstring(result)
         vm_uuid = root.findtext("uuid")
         assert vm_uuid
         assert vm_uuid != ""
+        assert vm_uuid != "7b48b1fe-066a-41a6-aef4-f0a9c028f719"
 
     def test_rbd_disk_added(self):
         xml = _read_test_xml()
