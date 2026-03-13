@@ -27,12 +27,18 @@ NAMESPACE = ""
 
 RESERVED_NAMES = ["xml"]
 OS_DISK_PREFIX = "system_"
+DATA_DISK_PREFIX = "data_"
 
 logger = logging.getLogger(__name__)
 
 """
 A module to manage VMs in Seapath cluster.
 """
+
+
+def _additional_disk_name(dev_name, vm_name):
+    """Return the Ceph image name for an additional disk."""
+    return DATA_DISK_PREFIX + vm_name + "_" + dev_name
 
 
 def _check_name(name):
@@ -97,7 +103,7 @@ def _get_ceph_hosts_xml(port=6789):
     return xml_lines
 
 
-def _create_xml(xml, vm_name, target_disk_bus="virtio"):
+def _create_xml(xml, vm_name, target_disk_bus="virtio", additional_disks=None):
     """
     Creates a libvirt configuration file according to xml and
     disk_name parameters.
@@ -108,6 +114,8 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
     :param: target_disk_bus: bus type of the VM system disk inside the VM.
             Should be a valid type recognized by libvirt, see https://libvirt.org/formatdomain.html#devices.
             Default: virtio
+    :param: additional_disks: optional dict mapping device names (e.g. "vdb") to
+        Ceph image names. Each entry produces an additional RBD disk element.
     """
     disk_name = OS_DISK_PREFIX + vm_name
     xml_root = ElementTree.fromstring(xml)
@@ -151,6 +159,28 @@ def _create_xml(xml, vm_name, target_disk_bus="virtio"):
         )
     )
     xml_root.find("devices").append(disk_xml)
+
+    # Append additional RBD disks
+    if additional_disks:
+        for dev, ceph_image in additional_disks.items():
+            extra_disk_xml = ElementTree.fromstring("""
+<disk type="network" device="disk">
+  <driver name="qemu" type="raw" cache="writeback" />
+  <auth username="libvirt">
+    <secret type="ceph" uuid="{}" />
+  </auth>
+  <source protocol="rbd" name="{}/{}">
+    {}
+  </source>
+  <target dev="{}" bus="{}" />
+</disk>
+""".format(
+                    rbd_secret, POOL_NAME, ceph_image, hosts_list,
+                    dev, target_disk_bus
+                )
+            )
+            xml_root.find("devices").append(extra_disk_xml)
+
     ElementTree.indent(xml_root, space="  ")
     return ElementTree.tostring(xml_root, encoding="unicode")
 
@@ -161,8 +191,17 @@ def _configure_vm(vm_options):
     configuration and add it on Pacemaker if enable is set to True.
     """
 
+    # Build map of additional Ceph disk names for XML generation
+    additional_ceph_disks = {}
+    additional_devs = vm_options.get("_known_additional_devs", [])
+    if not additional_devs:
+        additional_devs = list(vm_options.get("additional_disks", {}).keys())
+    for dev in additional_devs:
+        additional_ceph_disks[dev] = _additional_disk_name(dev, vm_options["name"])
+
     xml = _create_xml(
-        vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"]
+        vm_options["base_xml"], vm_options["name"], vm_options["disk_bus"],
+        additional_disks=additional_ceph_disks if additional_ceph_disks else None,
     )
 
     # Add to group and set initial metadata
@@ -172,6 +211,13 @@ def _configure_vm(vm_options):
         logger.info(
             "Image " + disk_name + " added to group " + vm_options["name"]
         )
+
+        # Add additional disks to the group
+        for dev, ceph_name in additional_ceph_disks.items():
+            rbd.add_image_to_group(ceph_name, vm_options["name"])
+            logger.info(
+                "Image " + ceph_name + " added to group " + vm_options["name"]
+            )
 
         rbd.set_image_metadata(disk_name, "vm_name", vm_options["name"])
         rbd.set_image_metadata(disk_name, "xml", xml)
@@ -237,6 +283,14 @@ def _configure_vm(vm_options):
                     f"_{pacemaker_arg}",
                     json.dumps(vm_options[pacemaker_arg]),
                 )
+
+        # Store additional disk device names as metadata on the system disk
+        if additional_ceph_disks:
+            rbd.set_image_metadata(
+                disk_name,
+                "_additional_disks",
+                json.dumps(list(additional_ceph_disks.keys())),
+            )
 
     logger.info("Image " + disk_name + " initial metadata set")
 
@@ -328,7 +382,9 @@ def create(vm_options_with_nones):
                         f"{pacemaker_arg} parameter must be a dictionary"
                     )
 
-    for f in [CEPH_CONF, vm_options["image"]]:
+    files_to_check = [CEPH_CONF, vm_options["image"]]
+    files_to_check.extend(vm_options.get("additional_disks", {}).values())
+    for f in files_to_check:
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
 
@@ -361,7 +417,7 @@ def create(vm_options_with_nones):
             if rbd.image_exists(disk_name):
                 rbd.remove_image(disk_name)
 
-            # Import qcow2 disk
+            # Import qcow2 system disk
             logger.info("Import qcow2 disk")
             rbd.import_qcow2(vm_options["image"], disk_name, progress)
             if not rbd.image_exists(disk_name):
@@ -369,6 +425,23 @@ def create(vm_options_with_nones):
                     "Could not import qcow2: " + vm_options["image"]
                 )
 
+            # Import additional disks
+            for dev, filepath in vm_options.get(
+                "additional_disks", {}
+            ).items():
+                add_disk_name = _additional_disk_name(
+                    dev, vm_options["name"]
+                )
+                if rbd.image_exists(add_disk_name):
+                    rbd.remove_image(add_disk_name)
+                logger.info(
+                    "Import additional disk %s as %s", filepath, add_disk_name
+                )
+                rbd.import_qcow2(filepath, add_disk_name, progress)
+                if not rbd.image_exists(add_disk_name):
+                    raise Exception(
+                        "Could not import qcow2: " + filepath
+                    )
             # Configure VM
             vm_options["disk_name"] = disk_name
             if "disk_bus" not in vm_options:
@@ -471,21 +544,32 @@ def remove(vm_name):
         if vm_name in lvm.list():
             lvm.undefine(vm_name)
 
-    # Remove group and image from RBD cluster
+    # Remove group and all images from RBD cluster
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
         disk_name = OS_DISK_PREFIX + vm_name
+
+        # Collect all images in the group before removing the group
+        all_images = []
         if rbd.group_exists(vm_name):
+            all_images = rbd.list_group_images(vm_name)
             rbd.remove_group(vm_name)
 
-        if rbd.image_exists(disk_name):
-            rbd.remove_image(disk_name)
+        # Ensure system disk is in the removal list
+        if disk_name not in all_images:
+            all_images.append(disk_name)
+
+        # Remove all images
+        for img in all_images:
+            if rbd.image_exists(img):
+                rbd.remove_image(img)
 
         if rbd.group_exists(vm_name):
             raise Exception("Could not remove group " + vm_name)
 
-        if rbd.image_exists(disk_name):
-            raise Exception("Could not remove image " + disk_name)
+        for img in all_images:
+            if rbd.image_exists(img):
+                raise Exception("Could not remove image " + img)
 
     logger.info("VM " + vm_name + " removed")
 
@@ -920,6 +1004,36 @@ def clone(vm_options_with_nones):
             )
             if not rbd.image_exists(dst_disk):
                 raise Exception("Could not create image disk " + dst_disk)
+
+            # Copy additional disks from source VM
+            src_additional_devs = []
+            try:
+                src_additional_devs = json.loads(
+                    rbd.get_image_metadata(src_disk, "_additional_disks")
+                )
+            except KeyError:
+                pass
+
+            for dev in src_additional_devs:
+                src_add_disk = _additional_disk_name(dev, src_vm_name)
+                dst_add_disk = _additional_disk_name(dev, dst_vm_name)
+                if rbd.image_exists(dst_add_disk):
+                    rbd.remove_image(dst_add_disk)
+                logger.info(
+                    "Clone additional disk %s -> %s",
+                    src_add_disk, dst_add_disk,
+                )
+                rbd.copy_image(
+                    src_add_disk, dst_add_disk,
+                    overwrite=vm_options["force"], deep=True,
+                )
+                if not rbd.image_exists(dst_add_disk):
+                    raise Exception("Could not clone additional disk " + dst_add_disk)
+
+            # Pass known additional devs so _configure_vm can set up XML + group
+            if src_additional_devs:
+                vm_options["_known_additional_devs"] = src_additional_devs
+
             for disk_metadata in (
                 "_preferred_host",
                 "_pinned_host",
@@ -955,19 +1069,43 @@ def clone(vm_options_with_nones):
                 )
                 vm_options["disk_bus"] = "virtio"
 
-            # Configure VM
+            # Configure VM — strip source UUID so the clone gets a new one
             vm_options["name"] = dst_vm_name
+            base_root = ElementTree.fromstring(vm_options["base_xml"])
+            for old_uuid in base_root.findall("./uuid"):
+                base_root.remove(old_uuid)
+            vm_options["base_xml"] = ElementTree.tostring(
+                base_root, encoding="unicode"
+            )
             _configure_vm(vm_options)
 
         except Exception as err:
             remove(dst_vm_name)
             if not rbd.is_image_in_group(src_disk, src_vm_name):
                 rbd.add_image_to_group(src_disk, src_vm_name)
+            # Re-add source additional disks to source group if needed
+            for dev in src_additional_devs:
+                src_add_disk = _additional_disk_name(dev, src_vm_name)
+                try:
+                    if not rbd.is_image_in_group(src_add_disk, src_vm_name):
+                        rbd.add_image_to_group(src_add_disk, src_vm_name)
+                except Exception:
+                    pass
             raise err
 
     logger.info(
         "VM " + src_vm_name + " successfully cloned into " + dst_vm_name
     )
+
+
+def _get_all_disk_names(rbd, vm_name):
+    """
+    Return all Ceph image names belonging to a VM.
+    Uses the group if it exists, otherwise falls back to the system disk only.
+    """
+    if rbd.group_exists(vm_name):
+        return rbd.list_group_images(vm_name)
+    return [OS_DISK_PREFIX + vm_name]
 
 
 def create_snapshot(vm_name, snapshot_name):
@@ -983,22 +1121,28 @@ def create_snapshot(vm_name, snapshot_name):
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-        disk_name = OS_DISK_PREFIX + vm_name
-        if rbd.image_snapshot_exists(disk_name, snapshot_name):
-            raise Exception(
+        disk_names = _get_all_disk_names(rbd, vm_name)
+
+        # Validate that no snapshot with this name exists on any disk
+        for disk_name in disk_names:
+            if rbd.image_snapshot_exists(disk_name, snapshot_name):
+                raise Exception(
+                    "Snapshot "
+                    + snapshot_name
+                    + " already exists on image "
+                    + disk_name
+                )
+
+        # Create snapshot on all disks
+        for disk_name in disk_names:
+            rbd.create_image_snapshot(disk_name, snapshot_name)
+            logger.info(
                 "Snapshot "
                 + snapshot_name
-                + " already exists on image "
+                + " from image "
                 + disk_name
+                + " successfully created"
             )
-        rbd.create_image_snapshot(disk_name, snapshot_name)
-        logger.info(
-            "Snapshot "
-            + snapshot_name
-            + " from image "
-            + disk_name
-            + " successfully created"
-        )
 
 
 def remove_snapshot(vm_name, snapshot_name):
@@ -1009,15 +1153,17 @@ def remove_snapshot(vm_name, snapshot_name):
     :param snapshot_name: the name of the snapshot to be removed
     """
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-        disk_name = OS_DISK_PREFIX + vm_name
-        rbd.remove_image_snapshot(disk_name, snapshot_name)
-        logger.info(
-            "Snapshot "
-            + snapshot_name
-            + " from image "
-            + disk_name
-            + " successfully removed"
-        )
+        disk_names = _get_all_disk_names(rbd, vm_name)
+        for disk_name in disk_names:
+            if rbd.image_snapshot_exists(disk_name, snapshot_name):
+                rbd.remove_image_snapshot(disk_name, snapshot_name)
+                logger.info(
+                    "Snapshot "
+                    + snapshot_name
+                    + " from image "
+                    + disk_name
+                    + " successfully removed"
+                )
 
 
 def list_snapshots(vm_name):
@@ -1048,57 +1194,52 @@ def purge_image(vm_name, date=None, number=None):
         if not isinstance(date, datetime.datetime):
             raise ValueError("Parameter date is not datetime")
 
-        disk_name = OS_DISK_PREFIX + vm_name
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-
-            # snapshot list is sorted by creation date
-            for snap in rbd.list_image_snapshots(disk_name, flat=False):
-                snap_ts = rbd.get_image_snapshot_timestamp(
-                    disk_name, snap["id"]
-                )
-                if snap_ts.timestamp() < date.timestamp():
-                    rbd.remove_image_snapshot(disk_name, snap["name"])
+            for disk_name in _get_all_disk_names(rbd, vm_name):
+                for snap in rbd.list_image_snapshots(disk_name, flat=False):
+                    snap_ts = rbd.get_image_snapshot_timestamp(disk_name, snap["id"])
+                    if snap_ts.timestamp() < date.timestamp():
+                        rbd.remove_image_snapshot(disk_name, snap["name"])
 
             logger.info(
-                "Snapshots of image "
-                + disk_name
+                "Snapshots of VM "
+                + vm_name
                 + " previous to "
                 + str(date)
                 + " have been removed"
             )
 
-    elif number:
-        if not isinstance(number, int) or number < 1:
-            raise ValueError("Parameter number must be a positive integer")
+    elif number is not None:
+        if not isinstance(number, int) or number < 0:
+            raise ValueError("Parameter number must be a non-negative integer")
 
-        disk_name = OS_DISK_PREFIX + vm_name
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            all_disks = _get_all_disk_names(rbd, vm_name)
+            # To recover from previous errors where not all snapshots were removed
+            min_snap_count = min(len(rbd.list_image_snapshots(d)) for d in all_disks)
+            for disk_name in all_disks:
+                snap_list = rbd.list_image_snapshots(disk_name)
+                to_remove = number + (len(snap_list) - min_snap_count)
+                if len(snap_list) <= to_remove:
+                    rbd.purge_image(disk_name)
+                else:
+                    for snap in snap_list[:to_remove]:
+                        rbd.remove_image_snapshot(disk_name, snap)
 
-            # snapshot list is sorted by creation date
-            snap_list = rbd.list_image_snapshots(disk_name)
-            if len(snap_list) <= number:
-                rbd.purge_image(disk_name)
-                logger.info(
-                    "All snapshots from image "
-                    + disk_name
-                    + " successfully removed"
-                )
-            else:
-                for snap in snap_list[:number]:
-                    rbd.remove_image_snapshot(disk_name, snap)
-                logger.info(
-                    "First "
-                    + str(number)
-                    + " snapshots of image "
-                    + disk_name
-                    + " have been removed"
-                )
+            logger.info(
+                "First "
+                + str(number)
+                + " snapshots of VM "
+                + vm_name
+                + " have been removed"
+            )
     else:
 
         with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
-            disk_name = OS_DISK_PREFIX + vm_name
-            rbd.purge_image(disk_name)
-            logger.info("Image " + disk_name + " successfully purged")
+            disk_names = _get_all_disk_names(rbd, vm_name)
+            for disk_name in disk_names:
+                rbd.purge_image(disk_name)
+            logger.info("VM " + vm_name + " successfully purged")
 
 
 def rollback_snapshot(vm_name, snapshot_name):
@@ -1111,26 +1252,30 @@ def rollback_snapshot(vm_name, snapshot_name):
 
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
 
-        disk_name = OS_DISK_PREFIX + vm_name
-        if not rbd.image_snapshot_exists(disk_name, snapshot_name):
-            raise Exception(
-                "Snapshot "
-                + snapshot_name
-                + " does not exist on VM "
-                + vm_name
-            )
+        disk_names = _get_all_disk_names(rbd, vm_name)
+        for dn in disk_names:
+            if not rbd.image_snapshot_exists(dn, snapshot_name):
+                raise Exception(
+                    "Snapshot "
+                    + snapshot_name
+                    + " does not exist on disk "
+                    + dn
+                    + " of VM "
+                    + vm_name
+                )
 
         enabled = is_enabled(vm_name)
         if enabled:
             disable_vm(vm_name)
 
-        rbd.rollback_image(disk_name, snapshot_name)
-        logger.info(
-            "Image "
-            + disk_name
-            + " successfully rollbacked to snapshot "
-            + snapshot_name
-        )
+        for dn in disk_names:
+            rbd.rollback_image(dn, snapshot_name)
+            logger.info(
+                "Image "
+                + dn
+                + " successfully rollbacked to snapshot "
+                + snapshot_name
+            )
 
     if enabled:
         enable_vm(vm_name)
