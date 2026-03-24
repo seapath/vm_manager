@@ -133,7 +133,90 @@ def get_parser():
                 help="The VM name",
             )
     create_parser.add_argument(
-        "--xml", type=str, required=True, help="VM libvirt XML path"
+        "--xml",
+        type=str,
+        required=False,
+        default=None,
+        help="VM libvirt XML path (optional if generation options are"
+        " used)",
+    )
+    create_parser.add_argument(
+        "--vcpus", type=int, default=1, help="Number of vCPUs"
+    )
+    create_parser.add_argument(
+        "--memory",
+        type=int,
+        default=2048,
+        help="RAM in MiB (default 2048)",
+    )
+    create_parser.add_argument(
+        "--cpuset",
+        type=str,
+        default=None,
+        help="Comma-separated host CPU list for pinning, " 'e.g. "2,3,4,5"',
+    )
+    create_parser.add_argument(
+        "--description",
+        type=str,
+        default=None,
+        help="VM description",
+    )
+    create_parser.add_argument(
+        "--rt",
+        action="store_true",
+        default=False,
+        help="Enable real-time (FIFO scheduling, PMU off, "
+        "host-passthrough)",
+    )
+    create_parser.add_argument(
+        "--rt-priority",
+        type=int,
+        default=1,
+        help="RT FIFO priority (default 1)",
+    )
+    create_parser.add_argument(
+        "--emulatorpin",
+        type=str,
+        default=None,
+        help="Emulator thread CPU pinning",
+    )
+    create_parser.add_argument(
+        "--hugepages",
+        action="store_true",
+        default=False,
+        help="Enable 1GiB hugepages memory with NUMA",
+    )
+    create_parser.add_argument(
+        "--balloon",
+        action="store_true",
+        default=False,
+        help="Enable virtio memballoon",
+    )
+    create_parser.add_argument(
+        "--vnc",
+        action="store_true",
+        default=False,
+        help="Enable VNC graphics",
+    )
+    create_parser.add_argument(
+        "--vnc-listen",
+        type=str,
+        default="127.0.0.1",
+        help="VNC listen address (default 127.0.0.1)",
+    )
+    create_parser.add_argument(
+        "--secure-boot",
+        action="store_true",
+        default=False,
+        help="Enable UEFI secure boot",
+    )
+    create_parser.add_argument(
+        "--net",
+        type=str,
+        action="append",
+        default=None,
+        help="Network interface (repeatable). Format: "
+        "type=bridge,source=br0,mac=xx:xx:xx:xx:xx:xx[,vlan=N]",
     )
     stop_parser.add_argument(
         "-f",
@@ -539,8 +622,20 @@ def main():
     elif args.command == "remove":
         vm_manager.remove(args.name)
     elif args.command == "create":
-        with open(args.xml, "r") as xml:
-            args.base_xml = xml.read()
+        if args.xml:
+            with open(args.xml, "r") as xml:
+                args.base_xml = xml.read()
+        else:
+            from vm_manager.xml_generator import generate_xml
+
+            gen_opts = vars(args).copy()
+            if gen_opts.get("cpuset"):
+                gen_opts["cpuset"] = [
+                    int(c) for c in gen_opts["cpuset"].split(",")
+                ]
+            # argparse already maps --secure-boot → secure_boot,
+            # --rt-priority → rt_priority, --vnc-listen → vnc_listen
+            args.base_xml = generate_xml(gen_opts)
         if "live_migration" in args:
             args.live_migration = args.enable_live_migration
         if "add_crm_config_cmd" in args:
