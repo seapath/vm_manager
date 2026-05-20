@@ -29,8 +29,9 @@ def prepare_xml_base(xml, vm_name):
             pass
         uuid_element = ElementTree.SubElement(xml_root, "uuid")
         uuid_element.text = str(uuid.uuid4())
-    name_element = ElementTree.SubElement(xml_root, "name")
+    name_element = ElementTree.Element("name")
     name_element.text = vm_name
+    xml_root.insert(0, name_element)
     return xml_root
 
 
