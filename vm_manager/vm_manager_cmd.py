@@ -530,10 +530,7 @@ def main():
     if args.command == "list":
         print("\n".join(vm_manager.list_vms()))
     elif args.command == "start":
-        if vm_manager.cluster_mode:
-            vm_manager.start(args.name)
-        else:
-            vm_manager.start(args.name, autostart=not args.no_autostart)
+        vm_manager.start(args.name)
     elif args.command == "stop":
         vm_manager.stop(args.name, force=args.force)
     elif args.command == "remove":
