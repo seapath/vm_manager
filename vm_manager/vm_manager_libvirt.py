@@ -51,7 +51,7 @@ def create(args):
 
     with LibVirtManager() as lvm:
         lvm.define(xml)
-        if args.get("autostart"):
+        if not args.get("no_autostart"):
             lvm.set_autostart(args.get("name"), True)
 
     logger.info("VM " + args.get("name") + " created successfully")
