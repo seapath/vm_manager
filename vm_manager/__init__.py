@@ -37,6 +37,8 @@ if cluster_mode:
         remove_pacemaker_remote,
         add_pacemaker_remote,
         add_to_cluster,
+        set_pinning_profile,
+        get_pinning_profile,
     )
 else:
     from .vm_manager_libvirt import (
