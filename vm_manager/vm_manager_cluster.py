@@ -310,6 +310,12 @@ def _configure_vm(vm_options):
                 "_additional_disks",
                 json.dumps(len(additional_ceph_disks)),
             )
+        if "pinning_profile" in vm_options:
+            rbd.set_image_metadata(
+                disk_name,
+                "_seapath_alloc",
+                vm_options["pinning_profile"],
+            )
 
     logger.info("Image " + disk_name + " initial metadata set")
 
@@ -1010,6 +1016,15 @@ def clone(vm_options_with_nones):
             logging.debug(
                 f"Updated {pacemaker_arg} with new arg: {vm_options[pacemaker_arg]}"
             )
+    if "pinning_profile" not in vm_options:
+        with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+            try:
+                profile = rbd.get_image_metadata(
+                    src_disk, "_seapath_alloc"
+                )
+                vm_options["pinning_profile"] = profile
+            except Exception:
+                pass
     if "force" not in vm_options:
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
@@ -1362,6 +1377,34 @@ def set_metadata(vm_name, metadata_name, metadata_value):
         + metadata_value
         + ")"
     )
+
+
+def set_pinning_profile(vm_name, yaml_str):
+    """
+    Set the CPU pinning profile for a VM.
+
+    :param vm_name: the VM name
+    :param yaml_str: YAML string of the pinning profile
+    """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        rbd.set_image_metadata(
+            disk_name, "_seapath_alloc", yaml_str
+        )
+
+
+def get_pinning_profile(vm_name):
+    """
+    Get the CPU pinning profile for a VM.
+
+    :param vm_name: the VM name
+    :return: the pinning profile as a YAML string
+    """
+    with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
+        disk_name = OS_DISK_PREFIX + vm_name
+        return rbd.get_image_metadata(
+            disk_name, "_seapath_alloc"
+        )
 
 
 def add_colocation(vm_name, *resources, strong=False):
