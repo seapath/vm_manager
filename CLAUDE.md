@@ -70,6 +70,9 @@ pytest tests/
 pytest tests/ \
     --ignore=tests/test_vm_manager_cluster.py \
     --ignore=tests/test_vm_manager_cmd_cluster.py
+
+# With coverage (branch coverage is on by default)
+pytest tests/ --cov --cov-report=term-missing --cov-report=html
 ```
 
 `tests/conftest.py` calls `install_ceph_stubs()` from `tests/ceph_stubs.py`
@@ -80,6 +83,10 @@ no cluster. The stubs raise on use, so a test that reaches real Ceph code
 fails loudly. Anything genuinely needing a cluster belongs in
 `test_vm_manager_cluster.py` or `test_vm_manager_cmd_cluster.py`, which CI
 ignores.
+
+Coverage config is in `pyproject.toml` (`[tool.coverage.run]`). There is
+deliberately no `fail_under` yet: the project is establishing a baseline
+towards the OpenSSF gold criteria (90% statement, 80% branch).
 
 Older standalone integration scripts, run by hand against a real cluster,
 live in `vm_manager/helpers/tests/pacemaker/` and
