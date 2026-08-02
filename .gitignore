@@ -16,6 +16,11 @@ __pycache__/
 # Ignore generated documentation
 /docs/_build/
 
+# Ignore coverage files
+/.coverage
+/coverage.xml
+/htmlcov/
+
 # Ignore sonar files
 /.scannerwork/
 /.sonar/

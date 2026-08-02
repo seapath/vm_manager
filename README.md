@@ -61,6 +61,16 @@ starts in cluster mode. The stubs raise as soon as they are used, so a test
 that reaches real Ceph code fails rather than passing against a fake. See
 `tests/ceph_stubs.py`.
 
+### Measure coverage
+
+```bash
+pytest tests/ --cov --cov-report=term-missing --cov-report=html
+```
+
+Branch coverage is enabled by default (see `[tool.coverage.run]` in
+`pyproject.toml`). The HTML report lands in `htmlcov/`. The CI workflow
+publishes `coverage.xml` and `htmlcov/` as a build artifact and prints a
+summary table in the job summary.
 
 ## Documentation
 
