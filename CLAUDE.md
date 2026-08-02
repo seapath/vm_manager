@@ -40,6 +40,28 @@ cqfd -b flake           # flake8
 cqfd -b check           # pylint
 ```
 
+## SonarCloud
+
+Project `seapath_vm_manager` in the `seapath` organisation, public:
+https://sonarcloud.io/summary/overall?id=seapath_vm_manager
+
+The analysis runs from the `test` job of `.github/workflows/ci.yml`, after
+the tests, so that `coverage.xml` exists and can be imported. Scope and
+report paths are in `sonar-project.properties`. Two things are easy to get
+wrong here:
+
+- **Automatic Analysis must stay disabled** in the project settings.
+  SonarCloud refuses a CI analysis while it is on, and Automatic Analysis
+  can never report coverage because it does not run the tests. The project
+  ran that way until 2026-08 and consequently had no coverage data at all.
+- **`fetch-depth: 0` on the checkout is required.** Without full history
+  SonarCloud has no blame data, so every line of a file a pull request
+  touches counts as new code and pre-existing issues fail the new-code
+  quality gate.
+
+Analysis needs the `SONAR_TOKEN` repository secret. The step is skipped
+when it is absent, which is what happens for pull requests from forks.
+
 ## Documentation
 
 ```bash
