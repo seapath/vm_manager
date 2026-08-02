@@ -19,8 +19,23 @@ dependencies = [
 readme = "README.md"
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["pytest>=7.0", "pytest-cov>=4.0", "coverage[toml]>=7.0"]
 docs = ["sphinx>=4.0", "sphinx-argparse"]
+
+[tool.coverage.run]
+branch = true
+source = ["vm_manager"]
+omit = [
+    # Standalone integration scripts shipped with the package, driven by
+    # hand against a real cluster. They are tests, not product code.
+    "vm_manager/helpers/tests/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+# No exclusions and no fail_under yet: this is a baseline measurement, and
+# the OpenSSF gold criteria (90% statement, 80% branch) need an honest
+# starting number before thresholds are worth enforcing.
 
 [tool.setuptools]
 packages = ["vm_manager", "vm_manager.helpers", "vm_manager.helpers.tests.pacemaker", "vm_manager.helpers.tests.rbd_manager"]
