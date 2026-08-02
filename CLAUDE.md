@@ -58,14 +58,37 @@ sphinx-argparse requires `get_parser()` functions in both CLI modules.
 
 ## Tests
 
-Tests are integration scripts requiring a real Ceph/Pacemaker cluster. Run individually:
+The pytest suite lives in `tests/`:
+
+```bash
+pip install .[test]
+
+# Everything (needs a real Ceph/Pacemaker cluster)
+pytest tests/
+
+# What CI runs: no cluster needed
+pytest tests/ \
+    --ignore=tests/test_vm_manager_cluster.py \
+    --ignore=tests/test_vm_manager_cmd_cluster.py
+```
+
+`tests/conftest.py` calls `install_ceph_stubs()` from `tests/ceph_stubs.py`
+**before** importing vm_manager. vm_manager picks its backend at import time
+(`__init__.py`), so without the stubs `cluster_mode` is False on any machine
+without Ceph and all cluster-side tests are skipped, even the ones that need
+no cluster. The stubs raise on use, so a test that reaches real Ceph code
+fails loudly. Anything genuinely needing a cluster belongs in
+`test_vm_manager_cluster.py` or `test_vm_manager_cmd_cluster.py`, which CI
+ignores.
+
+Older standalone integration scripts, run by hand against a real cluster,
+live in `vm_manager/helpers/tests/pacemaker/` and
+`vm_manager/helpers/tests/rbd_manager/`:
 
 ```bash
 python3 -m vm_manager.helpers.tests.rbd_manager.clone_rbd
 python3 -m vm_manager.helpers.tests.pacemaker.add_vm
 ```
-
-Test scripts are in `vm_manager/helpers/tests/pacemaker/` and `vm_manager/helpers/tests/rbd_manager/`.
 
 ## Architecture
 

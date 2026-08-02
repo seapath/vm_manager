@@ -1,12 +1,21 @@
 # Copyright (C) 2025, RTE (http://www.rte-france.com)
 # SPDX-License-Identifier: Apache-2.0
 
-import os
-import secrets
+# vm_manager selects its backend when it is first imported, so the Ceph
+# stubs have to be installed before any vm_manager import below. That is
+# what forces the unusual import order here (see the E402 exemption for
+# conftest.py in .flake8) and why this call sits at module level rather
+# than in a fixture.
+from ceph_stubs import install_ceph_stubs
 
-import pytest
+install_ceph_stubs()
 
-from vm_manager.helpers.libvirt import LibVirtManager
+import os  # noqa: E402
+import secrets  # noqa: E402
+
+import pytest  # noqa: E402
+
+from vm_manager.helpers.libvirt import LibVirtManager  # noqa: E402
 
 
 @pytest.fixture
