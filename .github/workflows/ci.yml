@@ -55,7 +55,17 @@ jobs:
         # the checkout, so the tests must import it from there. A regular
         # install copies it to site-packages, the tests import that copy, and
         # coverage reports 0% on every module.
-        run: pip install -e ".[test]"
+        #
+        # Constrained so a run does not pick up a new release on its own,
+        # and restricted to wheels so no dependency gets to run a setup
+        # script during the install. libvirt-python is the one exception:
+        # it publishes no wheel and compiles against the system libvirt
+        # headers, which is why libvirt-dev and pkg-config are installed
+        # above. Naming it keeps the exception to that single package
+        # instead of reopening source builds for the whole graph.
+        run: |
+          pip install -e ".[test]" -c requirements-ci.txt \
+            --only-binary :all: --no-binary libvirt-python
 
       - name: Run tests
         run: |
@@ -83,7 +93,14 @@ jobs:
           if-no-files-found: ignore
 
       - name: Install documentation dependencies
-        run: pip install ".[docs]"
+        # Editable too, so this step adds the docs extra instead of
+        # replacing the editable install made above by a copy. Sphinx and
+        # sphinx-argparse both ship wheels, the exception below is still
+        # needed because resolving the package pulls its runtime
+        # dependencies, libvirt-python included.
+        run: |
+          pip install -e ".[docs]" -c requirements-ci.txt \
+            --only-binary :all: --no-binary libvirt-python
 
       - name: Build documentation
         run: sphinx-build -b html docs/ docs/_build/html
