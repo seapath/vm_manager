@@ -29,8 +29,15 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # SonarCloud needs the full history to blame each line. Without
+          # it, every line of a file the pull request touches counts as new
+          # code, which drags pre-existing issues into the quality gate.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -91,6 +98,16 @@ jobs:
             coverage.xml
             htmlcov/
           if-no-files-found: ignore
+
+      # Automatic Analysis must stay off in the SonarCloud project
+      # settings, otherwise SonarCloud rejects this analysis. Skipped when
+      # SONAR_TOKEN is unavailable, which is the case for pull requests
+      # opened from a fork.
+      - name: SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
 
       - name: Install documentation dependencies
         # Editable too, so this step adds the docs extra instead of
