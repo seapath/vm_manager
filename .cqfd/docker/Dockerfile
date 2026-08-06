@@ -11,21 +11,10 @@ RUN set -x \
         python3-setuptools \
         python3-sphinx \
         python3-pip \
-        openjdk-8-jre-headless \
-        unzip \
-        wget \
     && rm -rf /var/lib/apt/lists/ \
-    && pip3 install --no-cache-dir sphinx-argparse
-
-ARG sonar_version=4.7.0.2747
-ARG sonar_repo=https://binaries.sonarsource.com/Distribution/sonar-scanner-cli
-RUN set -x \
-    && wget -O /tmp/sonar-scanner.zip \
-    "${sonar_repo}/sonar-scanner-cli-${sonar_version}.zip" \
-    && cd /opt \
-    && unzip /tmp/sonar-scanner.zip \
-    && rm -f sonar-scanner.zip
-RUN ln -s "/opt/sonar-scanner-${sonar_version}" /opt/sonar-scanner
-RUN echo 'sonar.host.url=http://j1.sfl.team:9000/' \
-    > /opt/sonar-scanner/conf/sonar-scanner.properties
-COPY python-sonar.sh /usr/bin/python-sonar.sh
+    # Pinned so a rebuild does not pick up a new release on its own, and
+    # restricted to wheels so no dependency gets to run a setup script
+    # during the install. 0.6.0 is what the unpinned line already
+    # resolved to on the python3.10 of ubuntu 22.04.
+    && pip3 install --no-cache-dir --only-binary :all: \
+        sphinx-argparse==0.6.0
