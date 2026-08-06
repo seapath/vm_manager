@@ -44,7 +44,13 @@ def start_vm(guest):
 
 
 def main():
-    app.run(host="0.0.0.0")
+    # Loopback on purpose. In production this module is imported by the
+    # wsgi.py of the vmmgrapi Ansible role and served by gunicorn on a
+    # unix socket, behind an nginx that carries the TLS, the basic auth
+    # and the ACL. This entry point is for local debugging only, and
+    # listening on every interface would publish every route, in clear
+    # text and unauthenticated, around all of that.
+    app.run(host="127.0.0.1")
 
 
 if __name__ == "__main__":
