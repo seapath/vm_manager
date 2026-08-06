@@ -2,16 +2,10 @@
 org='rte'
 name='vm_manager'
 
-flavors='check sonar check_format format flake docs'
+flavors='check check_format format flake docs'
 
 [build]
 command='/usr/bin/pip install --root-user-action=ignore --prefix=. .'
-
-[sonar]
-command='/usr/bin/python-sonar.sh \
-        pacemaker_helper \
-        rbd_helper \
-        vm_manager'
 
 [check]
 command='pylint \
