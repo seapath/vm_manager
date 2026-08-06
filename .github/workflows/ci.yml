@@ -99,6 +99,25 @@ jobs:
             htmlcov/
           if-no-files-found: ignore
 
+      - name: Read the project version
+        id: version
+        # The SonarCloud project compares against the previous version to
+        # decide what counts as new code. Every analysis so far ran without
+        # a version, so there was no boundary and the period fell back to
+        # the first analysis ever: the whole code base counted as new, and
+        # publishing coverage turned the main branch gate red on 2000 lines
+        # of pre-existing code. Feeding the scanner the version from
+        # pyproject.toml, the single source of truth, gives the period a
+        # real boundary at each release.
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import pathlib
+          import tomllib
+
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          print("version=" + pyproject["project"]["version"])
+          PY
+
       # Automatic Analysis must stay off in the SonarCloud project
       # settings, otherwise SonarCloud rejects this analysis. Skipped when
       # SONAR_TOKEN is unavailable, which is the case for pull requests
@@ -108,6 +127,8 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
         env:
           SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: -Dsonar.projectVersion=${{ steps.version.outputs.version }}
 
       - name: Install documentation dependencies
         # Editable too, so this step adds the docs extra instead of
