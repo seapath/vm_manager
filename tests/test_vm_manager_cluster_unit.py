@@ -26,6 +26,7 @@ import pytest
 
 import vm_manager
 from vm_manager import vm_manager_cluster as vmc
+from vm_manager.exceptions import UuidConflictError
 
 pytestmark = pytest.mark.skipif(
     not vm_manager.cluster_mode,
@@ -41,6 +42,20 @@ BASE_XML = (
     "<domain type='kvm'>"
     "<uuid>11111111-2222-3333-4444-555555555555</uuid>"
     "<name>srcvm</name>"
+    "</domain>"
+)
+
+# What libvirt returns for the source VM of an add_to_cluster: one local
+# disk, which the cluster backend has to replace by the Ceph RBD one.
+LIBVIRT_XML = (
+    "<domain type='kvm'>"
+    "<uuid>99999999-8888-7777-6666-555555555555</uuid>"
+    "<name>srcvm</name>"
+    "<devices>"
+    "<disk type='file' device='disk'>"
+    "<source file='/var/lib/libvirt/images/srcvm.qcow2'/>"
+    "</disk>"
+    "</devices>"
     "</domain>"
 )
 
@@ -115,23 +130,104 @@ class FakeRbd:
         self._record("add_image_to_group", image, group)
         self.groups.setdefault(group, set()).add(image)
 
+    def import_qcow2(self, path, name, progress=False):
+        self._record("import_qcow2", path, name, progress)
+        if name in self.no_create:
+            return
+        self.images.add(name)
+        self.metadata.setdefault(name, {})
+
+
+class FakeDomain:
+    """The subset of a libvirt domain that the cluster backend uses."""
+
+    def __init__(self, xml, active=False):
+        self.xml = xml
+        self.active = active
+        self.destroyed = False
+
+    def XMLDesc(self, flags):
+        return self.xml
+
+    def isActive(self):
+        return self.active
+
+    def destroy(self):
+        self.destroyed = True
+        self.active = False
+
+
+class FakeLibvirt:
+    """Recording stand-in for LibVirtManager, usable as a context manager."""
+
+    class _Conn:
+        def __init__(self, manager):
+            self._manager = manager
+
+        def lookupByName(self, name):
+            self._manager.calls.append(("lookupByName", name))
+            return self._manager.domains[name]
+
+    def __init__(self, domains=None):
+        self.domains = dict(domains or {})
+        self.calls = []
+        self._conn = self._Conn(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    def list(self):
+        self.calls.append(("list",))
+        return list(self.domains)
+
+    def undefine(self, name):
+        self.calls.append(("undefine", name))
+        self.domains.pop(name, None)
+
 
 class Collaborators:
-    """The recorders standing in for what clone() delegates to."""
+    """The recorders standing in for what the functions delegate to."""
 
-    def __init__(self, rbd):
+    def __init__(self, rbd, libvirt, ceph_conf):
         self.rbd = rbd
+        self.libvirt = libvirt
+        self.ceph_conf = ceph_conf
         self.valid_hosts = {"hyp1", "hyp2"}
         self.configured = []
         self.removed = []
         self.groups_created = []
+        self.built_xml = []
+        self.built_xml_results = []
+        self.uuid_checks = []
         self.configure_error = None
+        self.uuid_error = None
+
+    @property
+    def built_xml_result(self):
+        """The XML string the last _create_xml() call returned."""
+        return self.built_xml_results[-1]
 
     def configure(self, vm_options):
         # Snapshot, so later mutations cannot rewrite what was asserted.
         self.configured.append(dict(vm_options))
         if self.configure_error is not None:
             raise self.configure_error
+
+    def create_xml(
+        self, xml, vm_name, disk_bus="virtio", additional_disks=None
+    ):
+        self.built_xml.append((xml, vm_name, disk_bus, additional_disks))
+        built = "<domain type='kvm'><name>{}</name></domain>".format(vm_name)
+        self.built_xml_results.append(built)
+        return built
+
+    def check_uuid(self, xml, uuid_source):
+        self.uuid_checks.append(xml)
+        if self.uuid_error is not None:
+            raise self.uuid_error
 
 
 @pytest.fixture
@@ -145,10 +241,26 @@ def rbd():
 
 
 @pytest.fixture
-def cluster(monkeypatch, rbd):
-    """Replace every cluster access made by the code under test."""
-    collaborators = Collaborators(rbd)
+def libvirt_domains():
+    """The libvirt side of the source VM, defined and shut off."""
+    return FakeLibvirt({SRC: FakeDomain(LIBVIRT_XML)})
 
+
+@pytest.fixture
+def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
+    """Replace every cluster access made by the code under test."""
+    # A real file, so the existence checks run for real rather than
+    # against a patched os.path.
+    ceph_conf = tmp_path / "ceph.conf"
+    ceph_conf.write_text("[global]\n")
+    collaborators = Collaborators(rbd, libvirt_domains, str(ceph_conf))
+
+    monkeypatch.setattr(vmc, "CEPH_CONF", str(ceph_conf))
+    monkeypatch.setattr(
+        vmc, "LibVirtManager", lambda *a, **kw: libvirt_domains
+    )
+    monkeypatch.setattr(vmc, "_create_xml", collaborators.create_xml)
+    monkeypatch.setattr(vmc, "check_uuid_conflict", collaborators.check_uuid)
     monkeypatch.setattr(vmc, "RbdManager", lambda *a, **kw: rbd)
     monkeypatch.setattr(
         vmc,
@@ -182,6 +294,41 @@ def options(**overrides):
     values = {"name": SRC, "dst_name": DST}
     values.update(overrides)
     return values
+
+
+@pytest.fixture
+def created(monkeypatch, cluster):
+    """Record what add_to_cluster() hands over to create()."""
+    calls = []
+    monkeypatch.setattr(
+        vmc, "create", lambda vm_options: calls.append(dict(vm_options))
+    )
+    return calls
+
+
+@pytest.fixture
+def disk_file(tmp_path):
+    """Create a real disk image file and return its path."""
+
+    def make(name):
+        path = tmp_path / name
+        path.write_bytes(b"qcow2")
+        return str(path)
+
+    return make
+
+
+@pytest.fixture
+def create_options(disk_file):
+    """Build a create() argument dict pointing at a real image file."""
+    image = disk_file("system.qcow2")
+
+    def build(**overrides):
+        values = {"name": DST, "image": image, "base_xml": BASE_XML}
+        values.update(overrides)
+        return values
+
+    return build
 
 
 class TestCloneValidation:
@@ -555,3 +702,356 @@ def test_successful_clone_is_logged(cluster, caplog):
     with caplog.at_level("INFO", logger=vmc.logger.name):
         vmc.clone(options(base_xml=BASE_XML))
     assert "successfully cloned" in caplog.text
+
+
+class TestCreateValidation:
+    """The checks create() makes before importing anything."""
+
+    def test_name_is_validated(self, cluster, create_options):
+        vm_options = create_options(name="bad name")
+        with pytest.raises(ValueError):
+            vmc.create(vm_options)
+        assert cluster.rbd.calls == []
+
+    def test_metadata_must_be_a_dictionary(self, cluster, create_options):
+        vm_options = create_options(metadata="not-a-dict")
+        with pytest.raises(ValueError, match="metadata parameter"):
+            vmc.create(vm_options)
+
+    def test_metadata_keys_are_validated(self, cluster, create_options):
+        vm_options = create_options(metadata={"bad key": "value"})
+        with pytest.raises(ValueError):
+            vmc.create(vm_options)
+
+    @pytest.mark.parametrize(
+        "option",
+        ["pacemaker_meta", "pacemaker_params", "pacemaker_utilization"],
+    )
+    def test_pacemaker_options_must_be_dictionaries(
+        self, cluster, create_options, option
+    ):
+        vm_options = create_options(
+            metadata={"ok": "1"}, **{option: "not-a-dict"}
+        )
+        with pytest.raises(ValueError, match=option):
+            vmc.create(vm_options)
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason='the pacemaker checks sit inside the \'if "metadata" in '
+        "vm_options' block, so create() accepts a non-dict pacemaker option "
+        "whenever no metadata is passed. _configure_vm then stores the string "
+        "as JSON, and the next clone of that VM fails on it. clone() "
+        "validates the same options unconditionally.",
+    )
+    def test_pacemaker_options_are_validated_without_metadata(
+        self, cluster, create_options
+    ):
+        vm_options = create_options(pacemaker_meta="not-a-dict")
+        with pytest.raises(ValueError, match="pacemaker_meta"):
+            vmc.create(vm_options)
+
+    def test_valid_metadata_and_pacemaker_options_are_accepted(
+        self, cluster, create_options
+    ):
+        vmc.create(
+            create_options(
+                metadata={"owner": "team1"},
+                pacemaker_meta={"priority": "10"},
+                pacemaker_params={"timeout": "30"},
+                pacemaker_utilization={"cpu": "2"},
+            )
+        )
+        assert cluster.configured[0]["metadata"] == {"owner": "team1"}
+
+    def test_missing_ceph_conf_is_reported(
+        self, cluster, create_options, monkeypatch
+    ):
+        monkeypatch.setattr(vmc, "CEPH_CONF", "/nonexistent/ceph.conf")
+        vm_options = create_options()
+        with pytest.raises(IOError, match="Could not find file"):
+            vmc.create(vm_options)
+
+    def test_missing_image_is_reported(self, cluster, create_options):
+        vm_options = create_options(image="/nonexistent/system.qcow2")
+        with pytest.raises(IOError, match="Could not find file"):
+            vmc.create(vm_options)
+
+    def test_missing_additional_disk_is_reported(
+        self, cluster, create_options
+    ):
+        vm_options = create_options(
+            additional_disks=["/nonexistent/data.qcow2"]
+        )
+        with pytest.raises(IOError, match="Could not find file"):
+            vmc.create(vm_options)
+
+    def test_invalid_pinned_host_is_rejected(self, cluster, create_options):
+        vm_options = create_options(pinned_host="nowhere")
+        with pytest.raises(Exception, match="not valid hypervisor"):
+            vmc.create(vm_options)
+
+    def test_invalid_preferred_host_is_rejected(self, cluster, create_options):
+        vm_options = create_options(preferred_host="nowhere")
+        with pytest.raises(Exception, match="not a valid hypervisor"):
+            vmc.create(vm_options)
+
+    def test_valid_hosts_are_accepted(self, cluster, create_options):
+        vmc.create(create_options(pinned_host="hyp1", preferred_host="hyp2"))
+        assert cluster.configured[0]["pinned_host"] == "hyp1"
+
+    def test_uuid_conflict_is_fatal(self, cluster, create_options):
+        cluster.uuid_error = UuidConflictError("uuid already used")
+        vm_options = create_options()
+        with pytest.raises(UuidConflictError):
+            vmc.create(vm_options)
+        assert cluster.groups_created == []
+
+    def test_uuid_is_checked_on_the_generated_xml(
+        self, cluster, create_options
+    ):
+        vmc.create(create_options())
+        assert cluster.uuid_checks == [cluster.built_xml_result]
+
+
+class TestCreateDisks:
+    """The qcow2 imports create() drives."""
+
+    def test_group_is_created(self, cluster, create_options):
+        vmc.create(create_options(force=True))
+        assert cluster.groups_created == [(DST, True)]
+
+    def test_force_defaults_to_false(self, cluster, create_options):
+        vmc.create(create_options())
+        assert cluster.groups_created == [(DST, False)]
+
+    def test_existing_image_is_removed_first(self, cluster, create_options):
+        cluster.rbd.images.add(DST_DISK)
+        vmc.create(create_options())
+        calls = cluster.rbd.call_names
+        assert calls.index("remove_image") < calls.index("import_qcow2")
+
+    def test_system_disk_is_imported(self, cluster, create_options):
+        vm_options = create_options()
+        vmc.create(vm_options)
+        assert (
+            "import_qcow2",
+            vm_options["image"],
+            DST_DISK,
+            False,
+        ) in cluster.rbd.calls
+
+    def test_progress_is_forwarded(self, cluster, create_options):
+        vm_options = create_options(progress=True)
+        vmc.create(vm_options)
+        assert (
+            "import_qcow2",
+            vm_options["image"],
+            DST_DISK,
+            True,
+        ) in cluster.rbd.calls
+
+    def test_failed_import_is_reported(self, cluster, create_options):
+        cluster.rbd.no_create.add(DST_DISK)
+        vm_options = create_options()
+        with pytest.raises(RuntimeError, match="Could not import qcow2"):
+            vmc.create(vm_options)
+
+    def test_additional_disks_are_imported(
+        self, cluster, create_options, disk_file
+    ):
+        extra = [disk_file("data0.qcow2"), disk_file("data1.qcow2")]
+        vmc.create(create_options(additional_disks=extra))
+        for index, path in enumerate(extra):
+            assert (
+                "import_qcow2",
+                path,
+                vmc._additional_disk_name(index, DST),
+                False,
+            ) in cluster.rbd.calls
+
+    def test_existing_additional_image_is_removed_first(
+        self, cluster, create_options, disk_file
+    ):
+        cluster.rbd.images.add(vmc._additional_disk_name(0, DST))
+        vmc.create(create_options(additional_disks=[disk_file("data.qcow2")]))
+        assert (
+            "remove_image",
+            vmc._additional_disk_name(0, DST),
+        ) in cluster.rbd.calls
+
+    def test_failed_additional_import_is_reported(
+        self, cluster, create_options, disk_file
+    ):
+        cluster.rbd.no_create.add(vmc._additional_disk_name(0, DST))
+        vm_options = create_options(additional_disks=[disk_file("data.qcow2")])
+        with pytest.raises(RuntimeError, match="Could not import qcow2"):
+            vmc.create(vm_options)
+
+
+class TestCreateConfiguration:
+    """What create() hands over to _configure_vm()."""
+
+    def test_disk_name_is_passed_on(self, cluster, create_options):
+        vmc.create(create_options())
+        assert cluster.configured[0]["disk_name"] == DST_DISK
+
+    def test_disk_bus_defaults_to_virtio(self, cluster, create_options):
+        vmc.create(create_options())
+        assert cluster.configured[0]["disk_bus"] == "virtio"
+
+    def test_explicit_disk_bus_is_kept(self, cluster, create_options):
+        vmc.create(create_options(disk_bus="sata"))
+        assert cluster.configured[0]["disk_bus"] == "sata"
+        assert cluster.built_xml[0][2] == "sata"
+
+    def test_none_values_are_dropped(self, cluster, create_options):
+        vmc.create(create_options(force=None, metadata=None))
+        assert cluster.groups_created == [(DST, False)]
+
+    def test_failed_configuration_removes_the_vm(
+        self, cluster, create_options
+    ):
+        cluster.configure_error = RuntimeError("boom")
+        vm_options = create_options()
+        with pytest.raises(RuntimeError, match="boom"):
+            vmc.create(vm_options)
+        assert cluster.removed == [DST]
+
+    def test_success_is_logged(self, cluster, create_options, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.create(create_options())
+        assert "created successfully" in caplog.text
+
+
+class TestAddToCluster:
+    """add_to_cluster(): what it reads from libvirt and hands to create()."""
+
+    def test_target_name_is_validated(self, cluster, created):
+        with pytest.raises(ValueError):
+            vmc.add_to_cluster({"name": SRC, "new_name": "bad name"})
+        assert created == []
+
+    def test_unknown_source_is_rejected(self, cluster, created):
+        with pytest.raises(Exception, match="does not exist in libvirt"):
+            vmc.add_to_cluster({"name": "ghostvm"})
+
+    def test_several_disks_are_rejected(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            LIBVIRT_XML.replace(
+                "</devices>",
+                "<disk type='file' device='disk'>"
+                "<source file='/tmp/second.qcow2'/>"
+                "</disk></devices>",
+            )
+        )
+        with pytest.raises(Exception, match="more than one disk"):
+            vmc.add_to_cluster({"name": SRC})
+
+    def test_image_comes_from_the_disk_source_file(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC})
+        assert created[0]["image"] == "/var/lib/libvirt/images/srcvm.qcow2"
+
+    def test_image_comes_from_the_disk_source_dev(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            LIBVIRT_XML.replace(
+                "<source file='/var/lib/libvirt/images/srcvm.qcow2'/>",
+                "<source dev='/dev/sdb'/>",
+            )
+        )
+        vmc.add_to_cluster({"name": SRC})
+        assert created[0]["image"] == "/dev/sdb"
+
+    def test_explicit_image_wins(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC, "image": "/somewhere/else.qcow2"})
+        assert created[0]["image"] == "/somewhere/else.qcow2"
+
+    def test_disk_without_source_is_reported(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            LIBVIRT_XML.replace(
+                "<source file='/var/lib/libvirt/images/srcvm.qcow2'/>", ""
+            )
+        )
+        with pytest.raises(Exception, match="Could not determine disk image"):
+            vmc.add_to_cluster({"name": SRC})
+
+    def test_source_without_path_is_reported(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            LIBVIRT_XML.replace(
+                "<source file='/var/lib/libvirt/images/srcvm.qcow2'/>",
+                "<source/>",
+            )
+        )
+        with pytest.raises(Exception, match="Could not determine disk image"):
+            vmc.add_to_cluster({"name": SRC})
+
+    def test_domain_without_devices_is_reported(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            "<domain type='kvm'><name>srcvm</name></domain>"
+        )
+        with pytest.raises(Exception, match="Could not determine disk image"):
+            vmc.add_to_cluster({"name": SRC})
+
+    def test_domain_without_devices_accepts_an_explicit_image(
+        self, cluster, created
+    ):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            "<domain type='kvm'><name>srcvm</name></domain>"
+        )
+        vmc.add_to_cluster({"name": SRC, "image": "/somewhere/else.qcow2"})
+        assert created[0]["image"] == "/somewhere/else.qcow2"
+
+    def test_local_disk_is_stripped_from_the_xml(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC})
+        assert "<disk" not in created[0]["base_xml"]
+
+    def test_rename_strips_the_uuid(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC, "new_name": "othervm"})
+        assert "<uuid>" not in created[0]["base_xml"]
+        assert created[0]["name"] == "othervm"
+
+    def test_rename_of_a_domain_without_uuid_is_fine(self, cluster, created):
+        cluster.libvirt.domains[SRC] = FakeDomain(
+            LIBVIRT_XML.replace(
+                "<uuid>99999999-8888-7777-6666-555555555555</uuid>", ""
+            )
+        )
+        vmc.add_to_cluster({"name": SRC, "new_name": "othervm"})
+        assert created[0]["name"] == "othervm"
+
+    def test_rename_leaves_the_source_defined(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC, "new_name": "othervm"})
+        assert ("undefine", SRC) not in cluster.libvirt.calls
+
+    def test_same_name_keeps_the_uuid(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC})
+        assert "<uuid>" in created[0]["base_xml"]
+
+    def test_same_name_undefines_the_source(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC})
+        assert ("undefine", SRC) in cluster.libvirt.calls
+
+    def test_running_source_is_destroyed_first(self, cluster, created):
+        domain = FakeDomain(LIBVIRT_XML, active=True)
+        cluster.libvirt.domains[SRC] = domain
+        vmc.add_to_cluster({"name": SRC})
+        assert domain.destroyed
+
+    def test_stopped_source_is_not_destroyed(self, cluster, created):
+        domain = cluster.libvirt.domains[SRC]
+        vmc.add_to_cluster({"name": SRC})
+        assert not domain.destroyed
+
+    def test_none_values_are_dropped(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC, "new_name": None})
+        assert created[0]["name"] == SRC
+
+    def test_create_options_are_forwarded(self, cluster, created):
+        vmc.add_to_cluster({"name": SRC, "force": True, "disable": True})
+        assert created[0]["force"] is True
+        assert created[0]["disable"] is True
+
+    def test_import_is_logged(self, cluster, created, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.add_to_cluster({"name": SRC, "new_name": "othervm"})
+        assert "imported as othervm" in caplog.text
