@@ -836,19 +836,20 @@ class TestCreateValidation:
         with pytest.raises(ValueError, match=option):
             vmc.create(vm_options)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason='the pacemaker checks sit inside the \'if "metadata" in '
-        "vm_options' block, so create() accepts a non-dict pacemaker option "
-        "whenever no metadata is passed. _configure_vm then stores the string "
-        "as JSON, and the next clone of that VM fails on it. clone() "
-        "validates the same options unconditionally.",
+    @pytest.mark.parametrize(
+        "option",
+        ["pacemaker_meta", "pacemaker_params", "pacemaker_utilization"],
     )
     def test_pacemaker_options_are_validated_without_metadata(
-        self, cluster, create_options
+        self, cluster, create_options, option
     ):
-        vm_options = create_options(pacemaker_meta="not-a-dict")
-        with pytest.raises(ValueError, match="pacemaker_meta"):
+        """The checks must not depend on metadata being passed too.
+
+        _configure_vm would store the string as JSON, and the next clone
+        of that VM would fail on it.
+        """
+        vm_options = create_options(**{option: "not-a-dict"})
+        with pytest.raises(ValueError, match=option):
             vmc.create(vm_options)
 
     def test_valid_metadata_and_pacemaker_options_are_accepted(

@@ -390,16 +390,16 @@ def create(vm_options_with_nones):
         for name, value in vm_options["metadata"].items():
             _check_name(name)
 
-        for pacemaker_arg in (
-            "pacemaker_meta",
-            "pacemaker_params",
-            "pacemaker_utilization",
-        ):
-            if pacemaker_arg in vm_options:
-                if not isinstance(vm_options[pacemaker_arg], dict):
-                    raise ValueError(
-                        f"{pacemaker_arg} parameter must be a dictionary"
-                    )
+    for pacemaker_arg in (
+        "pacemaker_meta",
+        "pacemaker_params",
+        "pacemaker_utilization",
+    ):
+        if pacemaker_arg in vm_options:
+            if not isinstance(vm_options[pacemaker_arg], dict):
+                raise ValueError(
+                    f"{pacemaker_arg} parameter must be a dictionary"
+                )
 
     files_to_check = [CEPH_CONF, vm_options["image"]]
     files_to_check.extend(vm_options.get("additional_disks", []))
