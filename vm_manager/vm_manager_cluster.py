@@ -287,10 +287,7 @@ def _configure_vm(vm_options):
         if "metadata" in vm_options:
             for name, data in vm_options["metadata"].items():
                 rbd.set_image_metadata(disk_name, name, data)
-        if "disk_bus" in vm_options:
-            rbd.set_image_metadata(
-                disk_name, "_disk_bus", vm_options["disk_bus"]
-            )
+        rbd.set_image_metadata(disk_name, "_disk_bus", vm_options["disk_bus"])
         for pacemaker_arg in (
             "pacemaker_meta",
             "pacemaker_params",
