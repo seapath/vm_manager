@@ -20,9 +20,12 @@ The end-to-end tests that drive a real Ceph and Pacemaker cluster live in
 test_vm_manager_cluster.py, which CI ignores.
 """
 
+import builtins
 import datetime
 import json
 import os
+
+import types
 
 import pytest
 
@@ -45,6 +48,10 @@ DST_DISK = vmc.OS_DISK_PREFIX + DST
 REAL_CONFIGURE_VM = vmc._configure_vm
 REAL_ENABLE_VM = vmc.enable_vm
 REAL_REMOVE = vmc.remove
+REAL_CREATE_XML = vmc._create_xml
+REAL_GET_REMOTE_NODES = vmc._get_remote_nodes
+
+RBD_SECRET = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
 BASE_XML = (
     "<domain type='kvm'>"
@@ -196,6 +203,41 @@ class FakeRbd:
         self._record("purge_image", disk)
         self.snapshots[disk] = []
 
+    def image_snapshot_exists(self, disk, name):
+        self._record("image_snapshot_exists", disk, name)
+        return any(
+            snap["name"] == name for snap in self.snapshots.get(disk, [])
+        )
+
+    def create_image_snapshot(self, disk, name):
+        self._record("create_image_snapshot", disk, name)
+        existing = self.snapshots.setdefault(disk, [])
+        existing.append(snapshot(len(existing), name, None))
+
+    def rollback_image(self, disk, name):
+        self._record("rollback_image", disk, name)
+
+
+class FakeSubprocess:
+    """The two subprocess entry points the cluster backend uses.
+
+    Patched in place of the module inside vm_manager_cluster, so the real
+    subprocess is never touched.
+    """
+
+    def __init__(self):
+        self.stdout = ""
+        self.output = ""
+        self.calls = []
+
+    def run(self, cmd, **kwargs):
+        self.calls.append(("run", cmd))
+        return types.SimpleNamespace(stdout=self.stdout, returncode=0)
+
+    def getoutput(self, cmd):
+        self.calls.append(("getoutput", cmd))
+        return self.output
+
 
 class FakePacemaker:
     """Recording stand-in for Pacemaker, usable as a context manager.
@@ -281,6 +323,8 @@ class FakeLibvirt:
     def __init__(self, domains=None):
         self.domains = dict(domains or {})
         self.calls = []
+        self.secrets = {}
+        self.uris = []
         self._conn = self._Conn(self)
 
     def __enter__(self):
@@ -295,6 +339,13 @@ class FakeLibvirt:
 
     def define(self, xml):
         self.calls.append(("define", xml))
+
+    def get_virsh_secrets(self):
+        self.calls.append(("get_virsh_secrets",))
+        return dict(self.secrets)
+
+    def console(self, name):
+        self.calls.append(("console", name))
 
     def undefine(self, name):
         self.calls.append(("undefine", name))
@@ -325,6 +376,9 @@ class Collaborators:
         self.remote_nodes = []
         self.enabled = []
         self.disabled = []
+        self.enabled_state = False
+        self.resource_host = None
+        self.subprocess = FakeSubprocess()
 
     @property
     def pacemaker(self):
@@ -384,13 +438,19 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
     ceph_conf.write_text("[global]\n")
     collaborators = Collaborators(rbd, libvirt_domains, str(ceph_conf))
 
+    def open_libvirt(uri=None):
+        libvirt_domains.uris.append(uri)
+        return libvirt_domains
+
     monkeypatch.setattr(vmc, "CEPH_CONF", str(ceph_conf))
-    monkeypatch.setattr(
-        vmc, "LibVirtManager", lambda *a, **kw: libvirt_domains
-    )
+    monkeypatch.setattr(vmc, "LibVirtManager", open_libvirt)
     monkeypatch.setattr(vmc, "_create_xml", collaborators.create_xml)
     monkeypatch.setattr(vmc, "check_uuid_conflict", collaborators.check_uuid)
     monkeypatch.setattr(vmc, "RbdManager", lambda *a, **kw: rbd)
+    monkeypatch.setattr(vmc, "subprocess", collaborators.subprocess)
+    monkeypatch.setattr(
+        vmc, "is_enabled", lambda name: collaborators.enabled_state
+    )
 
     class PacemakerStub(FakePacemaker):
         """Bound to this test's collaborators, and still a class, because
@@ -402,6 +462,10 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
         @staticmethod
         def is_valid_host(host):
             return host in collaborators.valid_hosts
+
+        @staticmethod
+        def find_resource(vm_name):
+            return collaborators.resource_host
 
     monkeypatch.setattr(vmc, "Pacemaker", PacemakerStub)
     monkeypatch.setattr(
@@ -452,6 +516,22 @@ def real_enable_vm(monkeypatch, cluster):
 def real_remove(monkeypatch, cluster):
     """Put the real remove() back, to test it rather than mock it."""
     monkeypatch.setattr(vmc, "remove", REAL_REMOVE)
+    return cluster
+
+
+@pytest.fixture
+def real_remote_nodes(monkeypatch, cluster):
+    """Put the real _get_remote_nodes() back, enable_vm mocks it away."""
+    monkeypatch.setattr(vmc, "_get_remote_nodes", REAL_GET_REMOTE_NODES)
+    return cluster
+
+
+@pytest.fixture
+def real_create_xml(monkeypatch, cluster):
+    """Put the real _create_xml() back, with a Ceph secret to find."""
+    monkeypatch.setattr(vmc, "_create_xml", REAL_CREATE_XML)
+    cluster.libvirt.secrets = {"client.libvirt secret": RBD_SECRET}
+    cluster.subprocess.stdout = "host1\nhost2\n"
     return cluster
 
 
@@ -1841,3 +1921,258 @@ class TestPurgeImageAll:
         with caplog.at_level("INFO", logger=vmc.logger.name):
             vmc.purge_image(SRC)
         assert "successfully purged" in caplog.text
+
+
+class TestSnapshots:
+    """create_snapshot(), remove_snapshot() and rollback_snapshot()."""
+
+    @pytest.fixture
+    def two_disks(self, cluster):
+        """A VM whose group holds a system disk and a data disk."""
+        extra = vmc._additional_disk_name(0, SRC)
+        cluster.rbd.groups[SRC].add(extra)
+        cluster.rbd.images.add(extra)
+        return extra
+
+    def test_snapshot_name_is_validated(self, cluster):
+        with pytest.raises(ValueError):
+            vmc.create_snapshot(SRC, "bad name")
+
+    def test_snapshot_is_created_on_every_disk(self, cluster, two_disks):
+        vmc.create_snapshot(SRC, "snap1")
+        assert (
+            "create_image_snapshot",
+            SRC_DISK,
+            "snap1",
+        ) in cluster.rbd.calls
+        assert (
+            "create_image_snapshot",
+            two_disks,
+            "snap1",
+        ) in cluster.rbd.calls
+
+    def test_duplicate_snapshot_is_refused(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        with pytest.raises(Exception, match="already exists on image"):
+            vmc.create_snapshot(SRC, "snap1")
+
+    def test_duplicate_on_one_disk_creates_nothing(self, cluster, two_disks):
+        """The check runs over every disk before the first creation."""
+        cluster.rbd.snapshots[two_disks] = [snapshot(0, "snap1", None)]
+        with pytest.raises(Exception, match="already exists on image"):
+            vmc.create_snapshot(SRC, "snap1")
+        assert "create_image_snapshot" not in cluster.rbd.call_names
+
+    def test_creation_is_logged(self, cluster, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.create_snapshot(SRC, "snap1")
+        assert "successfully created" in caplog.text
+
+    def test_snapshot_is_removed_from_every_disk(self, cluster, two_disks):
+        for disk in (SRC_DISK, two_disks):
+            cluster.rbd.snapshots[disk] = [snapshot(0, "snap1", None)]
+        vmc.remove_snapshot(SRC, "snap1")
+        for disk in (SRC_DISK, two_disks):
+            assert (
+                "remove_image_snapshot",
+                disk,
+                "snap1",
+            ) in cluster.rbd.calls
+
+    def test_absent_snapshot_is_not_removed(self, cluster):
+        vmc.remove_snapshot(SRC, "snap1")
+        assert "remove_image_snapshot" not in cluster.rbd.call_names
+
+    def test_removal_is_logged(self, cluster, caplog):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.remove_snapshot(SRC, "snap1")
+        assert "successfully removed" in caplog.text
+
+    def test_rollback_restores_every_disk(self, cluster, two_disks):
+        for disk in (SRC_DISK, two_disks):
+            cluster.rbd.snapshots[disk] = [snapshot(0, "snap1", None)]
+        vmc.rollback_snapshot(SRC, "snap1")
+        for disk in (SRC_DISK, two_disks):
+            assert ("rollback_image", disk, "snap1") in cluster.rbd.calls
+
+    def test_rollback_needs_the_snapshot_on_every_disk(
+        self, cluster, two_disks
+    ):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        with pytest.raises(Exception, match="does not exist on disk"):
+            vmc.rollback_snapshot(SRC, "snap1")
+        assert "rollback_image" not in cluster.rbd.call_names
+
+    def test_running_vm_is_disabled_then_enabled_again(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        cluster.enabled_state = True
+        vmc.rollback_snapshot(SRC, "snap1")
+        assert cluster.disabled == [SRC]
+        assert cluster.enabled == [(SRC, False)]
+
+    def test_disabled_vm_is_left_disabled(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        vmc.rollback_snapshot(SRC, "snap1")
+        assert cluster.disabled == []
+        assert cluster.enabled == []
+
+    def test_rollback_is_logged(self, cluster, caplog):
+        cluster.rbd.snapshots[SRC_DISK] = [snapshot(0, "snap1", None)]
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.rollback_snapshot(SRC, "snap1")
+        assert "successfully rollbacked" in caplog.text
+
+
+class TestConsole:
+    """console(): find the hypervisor, then open virsh on it."""
+
+    def test_console_opens_on_the_running_host(self, cluster):
+        cluster.resource_host = "hyp1"
+        vmc.console(SRC)
+        assert ("console", SRC) in cluster.libvirt.calls
+
+    def test_uri_targets_the_host_and_the_ssh_user(self, cluster):
+        cluster.resource_host = "hyp1"
+        vmc.console(SRC, ssh_user="someuser")
+        assert cluster.libvirt.uris == ["qemu+ssh://someuser@hyp1/system"]
+
+    def test_default_ssh_user(self, cluster):
+        cluster.resource_host = "hyp1"
+        vmc.console(SRC)
+        assert cluster.libvirt.uris == ["qemu+ssh://libvirtadmin@hyp1/system"]
+
+    def test_vm_running_nowhere_exits(self, cluster, capsys):
+        with pytest.raises(SystemExit) as exit_info:
+            vmc.console(SRC)
+        assert exit_info.value.code == 1
+        assert "is not running on any hypervisor" in capsys.readouterr().err
+
+
+class TestCreateXml:
+    """_create_xml(): the libvirt XML with the Ceph disks in it."""
+
+    BASE = (
+        "<domain type='kvm'>"
+        "<name>template</name>"
+        "<devices><emulator>/usr/bin/qemu</emulator></devices>"
+        "</domain>"
+    )
+
+    def test_the_rbd_disk_is_added(self, real_create_xml):
+        xml = vmc._create_xml(self.BASE, DST)
+        assert 'protocol="rbd"' in xml
+        assert "{}/{}".format(vmc.POOL_NAME, DST_DISK) in xml
+
+    def test_the_secret_is_taken_from_libvirt(self, real_create_xml):
+        assert RBD_SECRET in vmc._create_xml(self.BASE, DST)
+
+    def test_a_missing_secret_is_fatal(self, real_create_xml):
+        real_create_xml.libvirt.secrets = {"other secret": "irrelevant"}
+        with pytest.raises(Exception, match="Can't found rbd secret"):
+            vmc._create_xml(self.BASE, DST)
+
+    def test_the_ceph_hosts_are_listed_in_the_disk(self, real_create_xml):
+        xml = vmc._create_xml(self.BASE, DST)
+        assert '<host name="host1" port="6789" />' in xml
+        assert '<host name="host2" port="6789" />' in xml
+
+    def test_the_disk_bus_is_applied(self, real_create_xml):
+        xml = vmc._create_xml(self.BASE, DST, target_disk_bus="sata")
+        assert 'bus="sata"' in xml
+
+    def test_additional_disks_get_their_own_target(self, real_create_xml):
+        xml = vmc._create_xml(
+            self.BASE,
+            DST,
+            additional_disks=["data_dstvm_0", "data_dstvm_1"],
+        )
+        assert 'dev="vdb"' in xml
+        assert 'dev="vdc"' in xml
+        assert "rbd/data_dstvm_1" in xml
+
+    def test_without_additional_disks_only_vda(self, real_create_xml):
+        xml = vmc._create_xml(self.BASE, DST)
+        assert 'dev="vda"' in xml
+        assert 'dev="vdb"' not in xml
+
+    def test_the_vm_name_replaces_the_template_one(self, real_create_xml):
+        xml = vmc._create_xml(self.BASE, DST)
+        assert "<name>{}</name>".format(DST) in xml
+        assert "<name>template</name>" not in xml
+
+
+class TestCephHosts:
+    """_get_ceph_hosts_xml(): the monitor list handed to libvirt."""
+
+    def test_hostnames_become_host_elements(self, cluster):
+        cluster.subprocess.stdout = "host1\nhost2\n"
+        assert vmc._get_ceph_hosts_xml() == (
+            '<host name="host1" port="6789" />\n'
+            '<host name="host2" port="6789" />'
+        )
+
+    def test_blank_lines_are_dropped(self, cluster):
+        cluster.subprocess.stdout = "host1\n\n   \nhost2\n"
+        assert vmc._get_ceph_hosts_xml().count("<host") == 2
+
+    def test_no_host_gives_an_empty_string(self, cluster):
+        assert vmc._get_ceph_hosts_xml() == ""
+
+    def test_the_port_is_configurable(self, cluster):
+        cluster.subprocess.stdout = "host1\n"
+        assert 'port="3300"' in vmc._get_ceph_hosts_xml(port=3300)
+
+
+class TestRemoteNodes:
+    """_get_remote_nodes(): the remote nodes crm_mon reports."""
+
+    CRM_MON = (
+        "<pacemaker-result><nodes>"
+        '<node name="hyp1" type="member" />'
+        '<node name="remote1" type="remote" />'
+        '<node name="remote2" type="remote" />'
+        "</nodes></pacemaker-result>"
+    )
+
+    def test_only_remote_nodes_are_returned(self, real_remote_nodes):
+        real_remote_nodes.subprocess.output = self.CRM_MON
+        assert vmc._get_remote_nodes() == ["remote1", "remote2"]
+
+    def test_a_cluster_without_remote_nodes(self, real_remote_nodes):
+        real_remote_nodes.subprocess.output = (
+            "<pacemaker-result><nodes>"
+            '<node name="hyp1" type="member" />'
+            "</nodes></pacemaker-result>"
+        )
+        assert vmc._get_remote_nodes() == []
+
+
+class TestObserverHost:
+    """_get_observer_host(): the observer named in /etc/cluster.conf."""
+
+    @pytest.fixture
+    def cluster_conf(self, monkeypatch, tmp_path):
+        """Serve /etc/cluster.conf from a temporary file.
+
+        The path is hardcoded in the function, so the only seam is open
+        itself. Every other path keeps the real one.
+        """
+        real_open = builtins.open
+        path = tmp_path / "cluster.conf"
+
+        def fake_open(file, *args, **kwargs):
+            if file == "/etc/cluster.conf":
+                return real_open(path, *args, **kwargs)
+            return real_open(file, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", fake_open)
+        return path
+
+    def test_the_observer_is_returned(self, cluster_conf):
+        cluster_conf.write_text("[machines]\nobserver = obs1\n")
+        assert vmc._get_observer_host() == "obs1"
+
+    def test_no_observer_gives_none(self, cluster_conf):
+        cluster_conf.write_text("[machines]\nhypervisor = hyp1\n")
+        assert vmc._get_observer_host() is None
