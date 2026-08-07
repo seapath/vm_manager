@@ -287,10 +287,7 @@ def _configure_vm(vm_options):
         if "metadata" in vm_options:
             for name, data in vm_options["metadata"].items():
                 rbd.set_image_metadata(disk_name, name, data)
-        if "disk_bus" in vm_options:
-            rbd.set_image_metadata(
-                disk_name, "_disk_bus", vm_options["disk_bus"]
-            )
+        rbd.set_image_metadata(disk_name, "_disk_bus", vm_options["disk_bus"])
         for pacemaker_arg in (
             "pacemaker_meta",
             "pacemaker_params",
@@ -390,16 +387,16 @@ def create(vm_options_with_nones):
         for name, value in vm_options["metadata"].items():
             _check_name(name)
 
-        for pacemaker_arg in (
-            "pacemaker_meta",
-            "pacemaker_params",
-            "pacemaker_utilization",
-        ):
-            if pacemaker_arg in vm_options:
-                if not isinstance(vm_options[pacemaker_arg], dict):
-                    raise ValueError(
-                        f"{pacemaker_arg} parameter must be a dictionary"
-                    )
+    for pacemaker_arg in (
+        "pacemaker_meta",
+        "pacemaker_params",
+        "pacemaker_utilization",
+    ):
+        if pacemaker_arg in vm_options:
+            if not isinstance(vm_options[pacemaker_arg], dict):
+                raise ValueError(
+                    f"{pacemaker_arg} parameter must be a dictionary"
+                )
 
     files_to_check = [CEPH_CONF, vm_options["image"]]
     files_to_check.extend(vm_options.get("additional_disks", []))
@@ -1014,6 +1011,10 @@ def clone(vm_options_with_nones):
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
 
+    # Bound before the try below, because the rollback loops over it and
+    # the copy it is read from can fail.
+    src_additional_count = 0
+
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         try:
             # Overwrite image if necessary
@@ -1029,7 +1030,6 @@ def clone(vm_options_with_nones):
                 raise Exception("Could not create image disk " + dst_disk)
 
             # Copy additional disks from source VM
-            src_additional_count = 0
             try:
                 src_additional_count = json.loads(
                     rbd.get_image_metadata(src_disk, "_additional_disks")
