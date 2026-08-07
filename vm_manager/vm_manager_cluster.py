@@ -1014,6 +1014,10 @@ def clone(vm_options_with_nones):
         vm_options["force"] = False
     _create_vm_group(dst_vm_name, vm_options["force"])
 
+    # Bound before the try below, because the rollback loops over it and
+    # the copy it is read from can fail.
+    src_additional_count = 0
+
     with RbdManager(CEPH_CONF, POOL_NAME, NAMESPACE) as rbd:
         try:
             # Overwrite image if necessary
@@ -1029,7 +1033,6 @@ def clone(vm_options_with_nones):
                 raise Exception("Could not create image disk " + dst_disk)
 
             # Copy additional disks from source VM
-            src_additional_count = 0
             try:
                 src_additional_count = json.loads(
                     rbd.get_image_metadata(src_disk, "_additional_disks")

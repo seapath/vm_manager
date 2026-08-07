@@ -785,19 +785,17 @@ class TestCloneRollback:
         with pytest.raises(RuntimeError, match="boom"):
             vmc.clone(vm_options)
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the rollback loops over src_additional_count, which is only "
-        "assigned after the system disk copy. A failure in image_exists, "
-        "remove_image or copy_image, or a copy that creates nothing, "
-        "therefore raises UnboundLocalError from the except branch and hides "
-        "the error that caused the rollback.",
-    )
     def test_failed_system_disk_copy_is_reported(self, cluster):
+        """The rollback must not hide what made it run.
+
+        It loops over src_additional_count, which the copy above it can
+        fail before setting.
+        """
         cluster.rbd.no_create.add(DST_DISK)
         vm_options = options(base_xml=BASE_XML)
         with pytest.raises(Exception, match="Could not create image disk"):
             vmc.clone(vm_options)
+        assert cluster.removed == [DST]
 
 
 def test_successful_clone_is_logged(cluster, caplog):
