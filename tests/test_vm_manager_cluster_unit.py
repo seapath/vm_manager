@@ -21,6 +21,7 @@ test_vm_manager_cluster.py, which CI ignores.
 """
 
 import json
+import os
 
 import pytest
 
@@ -37,6 +38,11 @@ SRC = "srcvm"
 DST = "dstvm"
 SRC_DISK = vmc.OS_DISK_PREFIX + SRC
 DST_DISK = vmc.OS_DISK_PREFIX + DST
+
+# Captured before any fixture replaces them, so the tests that exercise
+# these two for real can put them back.
+REAL_CONFIGURE_VM = vmc._configure_vm
+REAL_ENABLE_VM = vmc.enable_vm
 
 BASE_XML = (
     "<domain type='kvm'>"
@@ -138,6 +144,57 @@ class FakeRbd:
         self.metadata.setdefault(name, {})
 
 
+class FakePacemaker:
+    """Recording stand-in for Pacemaker, usable as a context manager.
+
+    The cluster resources live on the shared Collaborators rather than on
+    the instance, because the code opens a new Pacemaker per operation.
+    """
+
+    def __init__(self, collaborators, vm_name):
+        self.collaborators = collaborators
+        self.vm_name = vm_name
+        self.calls = []
+        collaborators.pacemakers.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc_info):
+        return False
+
+    @property
+    def call_names(self):
+        return [call[0] for call in self.calls]
+
+    def list_resources(self):
+        self.calls.append(("list_resources",))
+        return list(self.collaborators.resources)
+
+    def add_vm(self, vm_options, nostart=False):
+        self.calls.append(("add_vm", dict(vm_options), nostart))
+        if not self.collaborators.add_vm_fails:
+            self.collaborators.resources.add(self.vm_name)
+
+    def disable_location(self, host):
+        self.calls.append(("disable_location", host))
+
+    def pin_location(self, host):
+        self.calls.append(("pin_location", host))
+
+    def default_location(self, host):
+        self.calls.append(("default_location", host))
+
+    def run_crm_cmd(self, cmd):
+        self.calls.append(("run_crm_cmd", cmd))
+
+    def manage(self):
+        self.calls.append(("manage",))
+
+    def wait_for(self, state):
+        self.calls.append(("wait_for", state))
+
+
 class FakeDomain:
     """The subset of a libvirt domain that the cluster backend uses."""
 
@@ -183,6 +240,9 @@ class FakeLibvirt:
         self.calls.append(("list",))
         return list(self.domains)
 
+    def define(self, xml):
+        self.calls.append(("define", xml))
+
     def undefine(self, name):
         self.calls.append(("undefine", name))
         self.domains.pop(name, None)
@@ -204,6 +264,21 @@ class Collaborators:
         self.uuid_checks = []
         self.configure_error = None
         self.uuid_error = None
+        # Pacemaker side
+        self.pacemakers = []
+        self.resources = set()
+        self.add_vm_fails = False
+        self.observer = None
+        self.remote_nodes = []
+        self.enabled = []
+
+    @property
+    def pacemaker(self):
+        """The single Pacemaker the operation opened."""
+        assert (
+            len(self.pacemakers) == 1
+        ), "expected one Pacemaker, got {}".format(len(self.pacemakers))
+        return self.pacemakers[0]
 
     @property
     def built_xml_result(self):
@@ -262,19 +337,19 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
     monkeypatch.setattr(vmc, "_create_xml", collaborators.create_xml)
     monkeypatch.setattr(vmc, "check_uuid_conflict", collaborators.check_uuid)
     monkeypatch.setattr(vmc, "RbdManager", lambda *a, **kw: rbd)
-    monkeypatch.setattr(
-        vmc,
-        "Pacemaker",
-        type(
-            "PacemakerStub",
-            (),
-            {
-                "is_valid_host": staticmethod(
-                    lambda host: host in collaborators.valid_hosts
-                )
-            },
-        ),
-    )
+
+    class PacemakerStub(FakePacemaker):
+        """Bound to this test's collaborators, and still a class, because
+        the code calls is_valid_host on it without instantiating."""
+
+        def __init__(self, vm_name):
+            super().__init__(collaborators, vm_name)
+
+        @staticmethod
+        def is_valid_host(host):
+            return host in collaborators.valid_hosts
+
+    monkeypatch.setattr(vmc, "Pacemaker", PacemakerStub)
     monkeypatch.setattr(
         vmc,
         "_create_vm_group",
@@ -284,9 +359,36 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
     )
     monkeypatch.setattr(vmc, "_configure_vm", collaborators.configure)
     monkeypatch.setattr(
+        vmc,
+        "enable_vm",
+        lambda name, nostart=False: collaborators.enabled.append(
+            (name, nostart)
+        ),
+    )
+    monkeypatch.setattr(
+        vmc, "_get_observer_host", lambda: collaborators.observer
+    )
+    monkeypatch.setattr(
+        vmc, "_get_remote_nodes", lambda: list(collaborators.remote_nodes)
+    )
+    monkeypatch.setattr(
         vmc, "remove", lambda name: collaborators.removed.append(name)
     )
     return collaborators
+
+
+@pytest.fixture
+def real_configure_vm(monkeypatch, cluster):
+    """Put the real _configure_vm() back, to test it rather than mock it."""
+    monkeypatch.setattr(vmc, "_configure_vm", REAL_CONFIGURE_VM)
+    return cluster
+
+
+@pytest.fixture
+def real_enable_vm(monkeypatch, cluster):
+    """Put the real enable_vm() back, to test it rather than mock it."""
+    monkeypatch.setattr(vmc, "enable_vm", REAL_ENABLE_VM)
+    return cluster
 
 
 def options(**overrides):
@@ -1055,3 +1157,366 @@ class TestAddToCluster:
         with caplog.at_level("INFO", logger=vmc.logger.name):
             vmc.add_to_cluster({"name": SRC, "new_name": "othervm"})
         assert "imported as othervm" in caplog.text
+
+
+def configure_options(**overrides):
+    """Build a _configure_vm() argument dict."""
+    values = {"name": DST, "base_xml": BASE_XML, "disk_bus": "virtio"}
+    values.update(overrides)
+    return values
+
+
+class TestConfigureVmDisks:
+    """_configure_vm(): the group and the disk count."""
+
+    def test_system_disk_joins_the_group(self, real_configure_vm):
+        vmc._configure_vm(configure_options())
+        assert (
+            "add_image_to_group",
+            DST_DISK,
+            DST,
+        ) in real_configure_vm.rbd.calls
+
+    def test_additional_disks_join_the_group(self, real_configure_vm):
+        vmc._configure_vm(
+            configure_options(additional_disks=["/a.qcow2", "/b.qcow2"])
+        )
+        for index in range(2):
+            assert (
+                "add_image_to_group",
+                vmc._additional_disk_name(index, DST),
+                DST,
+            ) in real_configure_vm.rbd.calls
+
+    def test_known_count_wins_over_the_disk_list(self, real_configure_vm):
+        """A clone passes the count it read from the source, not paths."""
+        vmc._configure_vm(configure_options(_known_additional_count=3))
+        assert (
+            "set_image_metadata",
+            DST_DISK,
+            "_additional_disks",
+            json.dumps(3),
+        ) in real_configure_vm.rbd.calls
+
+    def test_disk_count_is_not_stored_without_additional_disks(
+        self, real_configure_vm
+    ):
+        vmc._configure_vm(configure_options())
+        assert (
+            "_additional_disks" not in real_configure_vm.rbd.metadata[DST_DISK]
+        )
+
+    def test_additional_disks_reach_the_xml_builder(self, real_configure_vm):
+        vmc._configure_vm(configure_options(_known_additional_count=1))
+        assert real_configure_vm.built_xml[0][3] == [
+            vmc._additional_disk_name(0, DST)
+        ]
+
+    def test_no_additional_disk_passes_none_to_the_xml_builder(
+        self, real_configure_vm
+    ):
+        vmc._configure_vm(configure_options())
+        assert real_configure_vm.built_xml[0][3] is None
+
+
+class TestConfigureVmMetadata:
+    """_configure_vm(): what it writes on the system disk."""
+
+    def _metadata(self, cluster, **overrides):
+        vmc._configure_vm(configure_options(**overrides))
+        return cluster.rbd.metadata[DST_DISK]
+
+    def test_name_and_xml_are_stored(self, real_configure_vm):
+        stored = self._metadata(real_configure_vm)
+        assert stored["vm_name"] == DST
+        assert stored["_base_xml"] == BASE_XML
+        assert stored["xml"] == real_configure_vm.built_xml_result
+
+    def test_live_migration_is_stored_when_asked(self, real_configure_vm):
+        stored = self._metadata(real_configure_vm, live_migration=True)
+        assert stored["_live_migration"] == "true"
+
+    def test_live_migration_is_not_stored_otherwise(self, real_configure_vm):
+        assert "_live_migration" not in self._metadata(real_configure_vm)
+
+    @pytest.mark.parametrize(
+        "option,key",
+        [
+            ("migration_user", "_migration_user"),
+            ("stop_timeout", "_stop_timeout"),
+            ("migrate_to_timeout", "_migrate_to_timeout"),
+            ("migration_downtime", "_migration_downtime"),
+            ("priority", "_priority"),
+        ],
+    )
+    def test_optional_settings_are_stored(
+        self, real_configure_vm, option, key
+    ):
+        stored = self._metadata(real_configure_vm, **{option: "value"})
+        assert stored[key] == "value"
+
+    def test_pinned_host_is_stored(self, real_configure_vm):
+        stored = self._metadata(real_configure_vm, pinned_host="hyp1")
+        assert stored["_pinned_host"] == "hyp1"
+        assert "_preferred_host" not in stored
+
+    def test_preferred_host_is_stored(self, real_configure_vm):
+        stored = self._metadata(real_configure_vm, preferred_host="hyp2")
+        assert stored["_preferred_host"] == "hyp2"
+
+    def test_pinned_host_wins_over_preferred(self, real_configure_vm):
+        stored = self._metadata(
+            real_configure_vm, pinned_host="hyp1", preferred_host="hyp2"
+        )
+        assert stored["_pinned_host"] == "hyp1"
+        assert "_preferred_host" not in stored
+
+    def test_crm_commands_are_stored_as_one_string(self, real_configure_vm):
+        stored = self._metadata(
+            real_configure_vm, crm_config_cmd=["cmd one", "cmd two"]
+        )
+        assert stored["_crm_config_cmd"] == "cmd one\ncmd two"
+
+    def test_user_metadata_is_stored(self, real_configure_vm):
+        stored = self._metadata(
+            real_configure_vm, metadata={"owner": "team1", "site": "paris"}
+        )
+        assert stored["owner"] == "team1"
+        assert stored["site"] == "paris"
+
+    def test_disk_bus_is_stored(self, real_configure_vm):
+        assert self._metadata(real_configure_vm)["_disk_bus"] == "virtio"
+
+    @pytest.mark.parametrize(
+        "option",
+        ["pacemaker_meta", "pacemaker_params", "pacemaker_utilization"],
+    )
+    def test_pacemaker_options_are_stored_as_json(
+        self, real_configure_vm, option
+    ):
+        stored = self._metadata(real_configure_vm, **{option: {"a": "1"}})
+        assert stored["_" + option] == json.dumps({"a": "1"})
+
+
+class TestConfigureVmHandover:
+    """_configure_vm(): libvirt and Pacemaker."""
+
+    def test_xml_is_defined_then_undefined(self, real_configure_vm):
+        vmc._configure_vm(configure_options())
+        assert real_configure_vm.libvirt.calls == [
+            ("define", real_configure_vm.built_xml_result),
+            ("undefine", DST),
+        ]
+
+    def test_vm_is_enabled_by_default(self, real_configure_vm):
+        vmc._configure_vm(configure_options())
+        assert real_configure_vm.enabled == [(DST, False)]
+
+    def test_enable_true_enables_the_vm(self, real_configure_vm):
+        vmc._configure_vm(configure_options(enable=True))
+        assert real_configure_vm.enabled == [(DST, False)]
+
+    def test_enable_false_leaves_it_disabled(self, real_configure_vm):
+        vmc._configure_vm(configure_options(enable=False))
+        assert real_configure_vm.enabled == []
+
+    def test_nostart_is_forwarded(self, real_configure_vm):
+        vmc._configure_vm(configure_options(nostart=True))
+        assert real_configure_vm.enabled == [(DST, True)]
+
+
+class TestEnableVmMetadata:
+    """enable_vm(): the Pacemaker options it reads from Ceph."""
+
+    ALL_METADATA = {
+        "_preferred_host": "hyp1",
+        "_live_migration": "true",
+        "_migration_user": "someuser",
+        "_stop_timeout": "45",
+        "_migrate_to_timeout": "180",
+        "_migration_downtime": "5",
+        "_crm_config_cmd": "cmd one\ncmd two",
+        "_priority": "10",
+        "_remote_node": "remote1",
+        "_remote_node_address": "10.0.0.1",
+        "_remote_node_port": "3121",
+        "_remote_node_timeout": "60",
+        "_pacemaker_meta": json.dumps({"meta": "1"}),
+        "_pacemaker_params": json.dumps({"param": "2"}),
+        "_pacemaker_utilization": json.dumps({"cpu": "2"}),
+    }
+
+    def _added(self, cluster, vm_name=DST, nostart=False):
+        vmc.enable_vm(vm_name, nostart)
+        added = [
+            call for call in cluster.pacemaker.calls if call[0] == "add_vm"
+        ]
+        assert added, "enable_vm() did not add the VM"
+        return added[0][1]
+
+    def test_defaults_when_the_disk_has_no_metadata(self, real_enable_vm):
+        vm_options = self._added(real_enable_vm)
+        assert vm_options["live_migration"] == "false"
+        assert vm_options["migration_user"] == "root"
+        assert vm_options["stop_timeout"] == "30"
+        assert vm_options["migrate_to_timeout"] == "120"
+        assert vm_options["migration_downtime"] == "0"
+        assert vm_options["priority"] == "0"
+        assert vm_options["pacemaker_remote"] is None
+        assert vm_options["custom_meta"] == {}
+        assert vm_options["custom_params"] == {}
+        assert vm_options["custom_utilization"] == {}
+
+    def test_every_setting_is_read_from_the_disk(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = dict(self.ALL_METADATA)
+        vm_options = self._added(real_enable_vm)
+        assert vm_options["live_migration"] == "true"
+        assert vm_options["migration_user"] == "someuser"
+        assert vm_options["stop_timeout"] == "45"
+        assert vm_options["migrate_to_timeout"] == "180"
+        assert vm_options["migration_downtime"] == "5"
+        assert vm_options["priority"] == "10"
+        assert vm_options["pacemaker_remote"] == "remote1"
+        assert vm_options["pacemaker_remote_addr"] == "10.0.0.1"
+        assert vm_options["pacemaker_remote_port"] == "3121"
+        assert vm_options["pacemaker_remote_timeout"] == "60"
+        assert vm_options["custom_meta"] == {"meta": "1"}
+        assert vm_options["custom_params"] == {"param": "2"}
+        assert vm_options["custom_utilization"] == {"cpu": "2"}
+
+    def test_live_migration_only_counts_when_true(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {"_live_migration": "maybe"}
+        assert self._added(real_enable_vm)["live_migration"] == "false"
+
+    def test_xml_path_is_derived_from_the_name(self, real_enable_vm):
+        expected = os.path.join(vmc.XML_PACEMAKER_PATH, DST + ".xml")
+        assert self._added(real_enable_vm)["xml"] == expected
+
+    @pytest.mark.parametrize(
+        "key,message",
+        [
+            ("_pacemaker_meta", "Custom metadata must be a dictionary"),
+            ("_pacemaker_params", "Custom params must be a dictionary"),
+            (
+                "_pacemaker_utilization",
+                "Custom utilization must be a dictionary",
+            ),
+        ],
+    )
+    def test_non_dict_pacemaker_metadata_is_rejected(
+        self, real_enable_vm, key, message
+    ):
+        real_enable_vm.rbd.metadata[DST_DISK] = {key: json.dumps(["nope"])}
+        with pytest.raises(ValueError, match=message):
+            vmc.enable_vm(DST)
+
+    def test_invalid_pinned_host_is_rejected(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {"_pinned_host": "nowhere"}
+        with pytest.raises(Exception, match="not valid hypervisor"):
+            vmc.enable_vm(DST)
+
+    def test_invalid_preferred_host_is_rejected(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {"_preferred_host": "nowhere"}
+        with pytest.raises(Exception, match="not valid hypervisor"):
+            vmc.enable_vm(DST)
+
+
+class TestEnableVmCluster:
+    """enable_vm(): what it drives on Pacemaker."""
+
+    def test_already_known_vm_is_left_alone(self, real_enable_vm, caplog):
+        real_enable_vm.resources.add(DST)
+        with caplog.at_level("WARNING", logger=vmc.logger.name):
+            vmc.enable_vm(DST)
+        assert "already on the cluster" in caplog.text
+        assert real_enable_vm.pacemaker.call_names == ["list_resources"]
+
+    def test_failed_add_is_reported(self, real_enable_vm):
+        real_enable_vm.add_vm_fails = True
+        with pytest.raises(Exception, match="Could not add VM"):
+            vmc.enable_vm(DST)
+
+    def test_observer_location_is_disabled(self, real_enable_vm):
+        real_enable_vm.observer = "observer1"
+        vmc.enable_vm(DST)
+        assert (
+            "disable_location",
+            "observer1",
+        ) in real_enable_vm.pacemaker.calls
+
+    def test_no_observer_disables_nothing(self, real_enable_vm):
+        vmc.enable_vm(DST)
+        assert "disable_location" not in real_enable_vm.pacemaker.call_names
+
+    def test_remote_node_locations_are_disabled(self, real_enable_vm):
+        real_enable_vm.remote_nodes = ["remote1", "remote2"]
+        vmc.enable_vm(DST)
+        for node in ("remote1", "remote2"):
+            assert (
+                "disable_location",
+                node,
+            ) in real_enable_vm.pacemaker.calls
+
+    def test_pinned_host_is_pinned(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {"_pinned_host": "hyp1"}
+        vmc.enable_vm(DST)
+        assert ("pin_location", "hyp1") in real_enable_vm.pacemaker.calls
+
+    def test_preferred_host_becomes_the_default_location(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {"_preferred_host": "hyp2"}
+        vmc.enable_vm(DST)
+        assert ("default_location", "hyp2") in real_enable_vm.pacemaker.calls
+
+    def test_pinned_host_wins_over_preferred(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {
+            "_pinned_host": "hyp1",
+            "_preferred_host": "hyp2",
+        }
+        vmc.enable_vm(DST)
+        names = real_enable_vm.pacemaker.call_names
+        assert "pin_location" in names
+        assert "default_location" not in names
+
+    def test_no_host_leaves_the_location_free(self, real_enable_vm):
+        vmc.enable_vm(DST)
+        names = real_enable_vm.pacemaker.call_names
+        assert "pin_location" not in names
+        assert "default_location" not in names
+
+    def test_crm_commands_are_run(self, real_enable_vm):
+        real_enable_vm.rbd.metadata[DST_DISK] = {
+            "_crm_config_cmd": "cmd one\ncmd two"
+        }
+        vmc.enable_vm(DST)
+        calls = real_enable_vm.pacemaker.calls
+        assert ("run_crm_cmd", "cmd one") in calls
+        assert ("run_crm_cmd", "cmd two") in calls
+
+    def test_no_crm_command_runs_nothing(self, real_enable_vm):
+        vmc.enable_vm(DST)
+        assert "run_crm_cmd" not in real_enable_vm.pacemaker.call_names
+
+    def test_resource_is_managed_and_waited_for(self, real_enable_vm):
+        vmc.enable_vm(DST)
+        calls = real_enable_vm.pacemaker.calls
+        assert ("manage",) in calls
+        assert ("wait_for", "Started") in calls
+
+    def test_nostart_skips_the_wait(self, real_enable_vm):
+        vmc.enable_vm(DST, nostart=True)
+        assert "wait_for" not in real_enable_vm.pacemaker.call_names
+        assert ("manage",) in real_enable_vm.pacemaker.calls
+
+    def test_nostart_is_forwarded_to_add_vm(self, real_enable_vm):
+        vmc.enable_vm(DST, nostart=True)
+        added = [
+            call
+            for call in real_enable_vm.pacemaker.calls
+            if call[0] == "add_vm"
+        ]
+        assert added[0][2] is True
+
+    def test_success_is_logged(self, real_enable_vm, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.enable_vm(DST)
+        assert "enabled on the cluster" in caplog.text
