@@ -20,6 +20,7 @@ The end-to-end tests that drive a real Ceph and Pacemaker cluster live in
 test_vm_manager_cluster.py, which CI ignores.
 """
 
+import datetime
 import json
 import os
 
@@ -40,9 +41,10 @@ SRC_DISK = vmc.OS_DISK_PREFIX + SRC
 DST_DISK = vmc.OS_DISK_PREFIX + DST
 
 # Captured before any fixture replaces them, so the tests that exercise
-# these two for real can put them back.
+# them for real can put them back.
 REAL_CONFIGURE_VM = vmc._configure_vm
 REAL_ENABLE_VM = vmc.enable_vm
+REAL_REMOVE = vmc.remove
 
 BASE_XML = (
     "<domain type='kvm'>"
@@ -83,6 +85,12 @@ class FakeRbd:
         # Image names whose group membership cannot be read, to simulate
         # Ceph failing during a rollback.
         self.group_errors = set()
+        # Names a removal must not remove, to simulate Ceph objects that
+        # survive the call that was supposed to delete them.
+        self.undeletable_groups = set()
+        self.undeletable_images = set()
+        # Image name -> list of {"id", "name", "timestamp"}
+        self.snapshots = {}
         self.calls = []
 
     def __enter__(self):
@@ -116,6 +124,8 @@ class FakeRbd:
 
     def remove_image(self, name):
         self._record("remove_image", name)
+        if name in self.undeletable_images:
+            return
         self.images.discard(name)
         self.metadata.pop(name, None)
 
@@ -142,6 +152,49 @@ class FakeRbd:
             return
         self.images.add(name)
         self.metadata.setdefault(name, {})
+
+    def list_groups(self):
+        self._record("list_groups")
+        return list(self.groups)
+
+    def group_exists(self, name):
+        self._record("group_exists", name)
+        return name in self.groups
+
+    def list_group_images(self, name):
+        self._record("list_group_images", name)
+        return sorted(self.groups[name])
+
+    def remove_group(self, name):
+        self._record("remove_group", name)
+        if name not in self.undeletable_groups:
+            self.groups.pop(name, None)
+
+    def list_image_snapshots(self, disk, flat=True):
+        self._record("list_image_snapshots", disk, flat)
+        snapshots = self.snapshots.get(disk, [])
+        if flat:
+            return [snap["name"] for snap in snapshots]
+        return [dict(snap) for snap in snapshots]
+
+    def get_image_snapshot_timestamp(self, disk, snap_id):
+        self._record("get_image_snapshot_timestamp", disk, snap_id)
+        for snap in self.snapshots.get(disk, []):
+            if snap["id"] == snap_id:
+                return snap["timestamp"]
+        raise KeyError(snap_id)
+
+    def remove_image_snapshot(self, disk, name):
+        self._record("remove_image_snapshot", disk, name)
+        self.snapshots[disk] = [
+            snap
+            for snap in self.snapshots.get(disk, [])
+            if snap["name"] != name
+        ]
+
+    def purge_image(self, disk):
+        self._record("purge_image", disk)
+        self.snapshots[disk] = []
 
 
 class FakePacemaker:
@@ -271,6 +324,7 @@ class Collaborators:
         self.observer = None
         self.remote_nodes = []
         self.enabled = []
+        self.disabled = []
 
     @property
     def pacemaker(self):
@@ -374,6 +428,9 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
     monkeypatch.setattr(
         vmc, "remove", lambda name: collaborators.removed.append(name)
     )
+    monkeypatch.setattr(
+        vmc, "disable_vm", lambda name: collaborators.disabled.append(name)
+    )
     return collaborators
 
 
@@ -388,6 +445,13 @@ def real_configure_vm(monkeypatch, cluster):
 def real_enable_vm(monkeypatch, cluster):
     """Put the real enable_vm() back, to test it rather than mock it."""
     monkeypatch.setattr(vmc, "enable_vm", REAL_ENABLE_VM)
+    return cluster
+
+
+@pytest.fixture
+def real_remove(monkeypatch, cluster):
+    """Put the real remove() back, to test it rather than mock it."""
+    monkeypatch.setattr(vmc, "remove", REAL_REMOVE)
     return cluster
 
 
@@ -1519,3 +1583,261 @@ class TestEnableVmCluster:
         with caplog.at_level("INFO", logger=vmc.logger.name):
             vmc.enable_vm(DST)
         assert "enabled on the cluster" in caplog.text
+
+
+class TestRemove:
+    """remove(): Pacemaker, then libvirt, then Ceph."""
+
+    def test_vm_is_disabled_first(self, real_remove):
+        vmc.remove(SRC)
+        assert real_remove.disabled == [SRC]
+
+    def test_defined_vm_is_undefined(self, real_remove):
+        vmc.remove(SRC)
+        assert ("undefine", SRC) in real_remove.libvirt.calls
+
+    def test_unknown_vm_is_not_undefined(self, real_remove):
+        vmc.remove("ghostvm")
+        assert "undefine" not in [
+            call[0] for call in real_remove.libvirt.calls
+        ]
+
+    def test_group_images_are_removed_with_the_group(self, real_remove):
+        extra = vmc._additional_disk_name(0, SRC)
+        real_remove.rbd.groups[SRC].add(extra)
+        real_remove.rbd.images.add(extra)
+        vmc.remove(SRC)
+        assert ("remove_group", SRC) in real_remove.rbd.calls
+        assert real_remove.rbd.images == set()
+
+    def test_system_disk_is_removed_without_a_group(self, real_remove):
+        del real_remove.rbd.groups[SRC]
+        vmc.remove(SRC)
+        assert ("remove_image", SRC_DISK) in real_remove.rbd.calls
+
+    def test_system_disk_missing_from_the_group_is_still_removed(
+        self, real_remove
+    ):
+        real_remove.rbd.groups[SRC] = {vmc._additional_disk_name(0, SRC)}
+        vmc.remove(SRC)
+        assert ("remove_image", SRC_DISK) in real_remove.rbd.calls
+
+    def test_absent_image_is_not_removed(self, real_remove):
+        real_remove.rbd.images.clear()
+        vmc.remove(SRC)
+        assert "remove_image" not in real_remove.rbd.call_names
+
+    def test_surviving_group_is_reported(self, real_remove):
+        real_remove.rbd.undeletable_groups.add(SRC)
+        with pytest.raises(Exception, match="Could not remove group"):
+            vmc.remove(SRC)
+
+    def test_surviving_image_is_reported(self, real_remove):
+        real_remove.rbd.undeletable_images.add(SRC_DISK)
+        with pytest.raises(RuntimeError, match="Could not remove image"):
+            vmc.remove(SRC)
+
+    def test_success_is_logged(self, real_remove, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.remove(SRC)
+        assert "removed" in caplog.text
+
+
+class TestListAllUuids:
+    """list_all_uuids(): the UUID index built from the group XMLs."""
+
+    def _with_xml(self, cluster, vm_name, xml):
+        cluster.rbd.groups.setdefault(vm_name, set())
+        cluster.rbd.metadata.setdefault(vmc.OS_DISK_PREFIX + vm_name, {})[
+            "xml"
+        ] = xml
+
+    def test_uuids_are_mapped_to_their_vm(self, cluster):
+        self._with_xml(cluster, SRC, BASE_XML)
+        assert vmc.list_all_uuids() == {
+            "11111111-2222-3333-4444-555555555555": SRC
+        }
+
+    def test_several_vms_are_listed(self, cluster):
+        self._with_xml(cluster, SRC, BASE_XML)
+        self._with_xml(
+            cluster,
+            DST,
+            BASE_XML.replace("1111", "2222"),
+        )
+        assert len(vmc.list_all_uuids()) == 2
+
+    def test_disk_without_xml_is_skipped(self, cluster, caplog):
+        with caplog.at_level("WARNING", logger=vmc.logger.name):
+            assert vmc.list_all_uuids() == {}
+        assert "Could not read UUID" in caplog.text
+
+    def test_malformed_xml_is_skipped(self, cluster, caplog):
+        self._with_xml(cluster, SRC, "<domain")
+        with caplog.at_level("WARNING", logger=vmc.logger.name):
+            assert vmc.list_all_uuids() == {}
+        assert "Could not read UUID" in caplog.text
+
+    def test_xml_without_uuid_is_skipped(self, cluster):
+        self._with_xml(cluster, SRC, "<domain><name>srcvm</name></domain>")
+        assert vmc.list_all_uuids() == {}
+
+    def test_no_group_gives_no_uuid(self, cluster):
+        cluster.rbd.groups.clear()
+        assert vmc.list_all_uuids() == {}
+
+
+class TestGetAllDiskNames:
+    """_get_all_disk_names(): the group, or the system disk alone."""
+
+    def test_group_images_are_returned(self, cluster):
+        extra = vmc._additional_disk_name(0, SRC)
+        cluster.rbd.groups[SRC].add(extra)
+        assert vmc._get_all_disk_names(cluster.rbd, SRC) == [extra, SRC_DISK]
+
+    def test_without_a_group_only_the_system_disk(self, cluster):
+        assert vmc._get_all_disk_names(cluster.rbd, "ghostvm") == [
+            vmc.OS_DISK_PREFIX + "ghostvm"
+        ]
+
+
+def snapshot(index, name, timestamp):
+    """Build a snapshot as the Ceph bindings report it."""
+    return {"id": index, "name": name, "timestamp": timestamp}
+
+
+class TestPurgeImageByDate:
+    """purge_image(date=...): drop what predates a date."""
+
+    OLD = datetime.datetime(2026, 1, 1)
+    RECENT = datetime.datetime(2026, 6, 1)
+    CUTOFF = datetime.datetime(2026, 3, 1)
+
+    @pytest.fixture(autouse=True)
+    def snapshots(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [
+            snapshot(0, "snap-old", self.OLD),
+            snapshot(1, "snap-recent", self.RECENT),
+        ]
+        return cluster
+
+    def test_date_and_number_are_exclusive(self, cluster):
+        with pytest.raises(ValueError, match="Only date or number"):
+            vmc.purge_image(SRC, date=self.CUTOFF, number=1)
+
+    def test_date_must_be_a_datetime(self, cluster):
+        with pytest.raises(ValueError, match="not datetime"):
+            vmc.purge_image(SRC, date="2026-03-01")
+
+    def test_older_snapshots_are_removed(self, cluster):
+        vmc.purge_image(SRC, date=self.CUTOFF)
+        assert (
+            "remove_image_snapshot",
+            SRC_DISK,
+            "snap-old",
+        ) in cluster.rbd.calls
+
+    def test_recent_snapshots_are_kept(self, cluster):
+        vmc.purge_image(SRC, date=self.CUTOFF)
+        assert (
+            "remove_image_snapshot",
+            SRC_DISK,
+            "snap-recent",
+        ) not in cluster.rbd.calls
+
+    def test_every_disk_of_the_group_is_purged(self, cluster):
+        extra = vmc._additional_disk_name(0, SRC)
+        cluster.rbd.groups[SRC].add(extra)
+        cluster.rbd.snapshots[extra] = [snapshot(0, "snap-old", self.OLD)]
+        vmc.purge_image(SRC, date=self.CUTOFF)
+        assert (
+            "remove_image_snapshot",
+            extra,
+            "snap-old",
+        ) in cluster.rbd.calls
+
+    def test_it_is_logged(self, cluster, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.purge_image(SRC, date=self.CUTOFF)
+        assert "previous to" in caplog.text
+
+
+class TestPurgeImageByNumber:
+    """purge_image(number=...): drop the oldest ones."""
+
+    @pytest.fixture(autouse=True)
+    def snapshots(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [
+            snapshot(index, "snap{}".format(index), None) for index in range(4)
+        ]
+        return cluster
+
+    @pytest.mark.parametrize("number", [-1, "two", 1.5])
+    def test_number_must_be_a_non_negative_integer(self, cluster, number):
+        with pytest.raises(ValueError, match="non-negative integer"):
+            vmc.purge_image(SRC, number=number)
+
+    def test_the_oldest_are_removed(self, cluster):
+        vmc.purge_image(SRC, number=2)
+        assert (
+            "remove_image_snapshot",
+            SRC_DISK,
+            "snap0",
+        ) in cluster.rbd.calls
+        assert (
+            "remove_image_snapshot",
+            SRC_DISK,
+            "snap1",
+        ) in cluster.rbd.calls
+
+    def test_the_others_are_kept(self, cluster):
+        vmc.purge_image(SRC, number=2)
+        assert (
+            "remove_image_snapshot",
+            SRC_DISK,
+            "snap2",
+        ) not in cluster.rbd.calls
+
+    def test_removing_them_all_purges_the_image(self, cluster):
+        vmc.purge_image(SRC, number=4)
+        assert ("purge_image", SRC_DISK) in cluster.rbd.calls
+
+    def test_a_disk_left_behind_catches_up(self, cluster):
+        """A disk with more snapshots than the others is realigned.
+
+        That happens when a previous purge failed halfway.
+        """
+        extra = vmc._additional_disk_name(0, SRC)
+        cluster.rbd.groups[SRC].add(extra)
+        cluster.rbd.snapshots[extra] = [
+            snapshot(index, "extra{}".format(index), None)
+            for index in range(6)
+        ]
+        vmc.purge_image(SRC, number=1)
+        removed = [
+            call[2]
+            for call in cluster.rbd.calls
+            if call[0] == "remove_image_snapshot" and call[1] == extra
+        ]
+        assert removed == ["extra0", "extra1", "extra2"]
+
+    def test_it_is_logged(self, cluster, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.purge_image(SRC, number=1)
+        assert "First 1 snapshots" in caplog.text
+
+
+class TestPurgeImageAll:
+    """purge_image() with neither date nor number."""
+
+    def test_every_disk_is_purged(self, cluster):
+        extra = vmc._additional_disk_name(0, SRC)
+        cluster.rbd.groups[SRC].add(extra)
+        vmc.purge_image(SRC)
+        assert ("purge_image", SRC_DISK) in cluster.rbd.calls
+        assert ("purge_image", extra) in cluster.rbd.calls
+
+    def test_it_is_logged(self, cluster, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.purge_image(SRC)
+        assert "successfully purged" in caplog.text
