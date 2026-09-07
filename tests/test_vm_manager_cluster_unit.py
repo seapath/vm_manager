@@ -131,6 +131,10 @@ class FakeRbd:
         self._record("remove_image_metadata", disk, key)
         del self.metadata[disk][key]
 
+    def list_image_metadata(self, disk):
+        self._record("list_image_metadata", disk)
+        return sorted(self.metadata.get(disk, {}))
+
     def image_exists(self, name):
         self._record("image_exists", name)
         return name in self.images
@@ -310,6 +314,15 @@ class FakePacemaker:
 
     def stop(self):
         self.calls.append(("stop",))
+
+    def add_colocation(self, *resources, strong=False):
+        self.calls.append(("add_colocation", resources, strong))
+
+    def add_meta(self, key, value):
+        self.calls.append(("add_meta", key, value))
+
+    def remove_meta(self, key):
+        self.calls.append(("remove_meta", key))
 
 
 class FakeDomain:
@@ -2252,6 +2265,171 @@ class TestSnapshots:
         with caplog.at_level("INFO", logger=vmc.logger.name):
             vmc.rollback_snapshot(SRC, "snap1")
         assert "successfully rollbacked" in caplog.text
+
+
+class TestListSnapshots:
+    """list_snapshots(): the snapshot names of the system disk."""
+
+    def test_snapshot_names_are_returned(self, cluster):
+        cluster.rbd.snapshots[SRC_DISK] = [
+            snapshot(0, "snap1", None),
+            snapshot(1, "snap2", None),
+        ]
+        assert vmc.list_snapshots(SRC) == ["snap1", "snap2"]
+
+    def test_no_snapshot_gives_an_empty_list(self, cluster):
+        assert vmc.list_snapshots(SRC) == []
+
+
+class TestMetadata:
+    """list_metadata(), get_metadata() and set_metadata()."""
+
+    def test_metadata_names_are_listed(self, cluster):
+        cluster.rbd.metadata[SRC_DISK]["name"] = SRC
+        assert vmc.list_metadata(SRC) == ["_base_xml", "name"]
+
+    def test_a_metadata_value_is_read(self, cluster):
+        assert vmc.get_metadata(SRC, "_base_xml") == BASE_XML
+
+    def test_an_unknown_metadata_raises(self, cluster):
+        with pytest.raises(KeyError):
+            vmc.get_metadata(SRC, "absent")
+
+    def test_a_metadata_value_is_written(self, cluster):
+        vmc.set_metadata(SRC, "colour", "blue")
+        assert cluster.rbd.metadata[SRC_DISK]["colour"] == "blue"
+
+    def test_a_reserved_metadata_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="reserved word"):
+            vmc.set_metadata(SRC, vmc.RESERVED_NAMES[0], "value")
+        assert "set_image_metadata" not in cluster.rbd.call_names
+
+    def test_a_metadata_name_with_special_chars_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.set_metadata(SRC, "not a name", "value")
+
+    def test_writing_a_metadata_is_logged(self, cluster, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.set_metadata(SRC, "colour", "blue")
+        assert "metadata set: (colour:blue)" in caplog.text
+
+
+class TestAddColocation:
+    """add_colocation(): the constraint handed over to Pacemaker."""
+
+    def test_resources_reach_pacemaker(self, cluster):
+        vmc.add_colocation(SRC, "res1", "res2")
+        assert (
+            "add_colocation",
+            ("res1", "res2"),
+            False,
+        ) in cluster.pacemaker.calls
+
+    def test_strong_is_passed_through(self, cluster):
+        vmc.add_colocation(SRC, "res1", strong=True)
+        assert ("add_colocation", ("res1",), True) in cluster.pacemaker.calls
+
+    def test_a_bad_vm_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.add_colocation("not a name", "res1")
+        assert cluster.pacemakers == []
+
+
+REMOTE_METADATA = (
+    "_remote_node",
+    "_remote_node_address",
+    "_remote_node_port",
+    "_remote_node_timeout",
+)
+
+REMOTE_META = (
+    "remote-node",
+    "remote-addr",
+    "remote-port",
+    "remote-connect-timeout",
+)
+
+
+class TestRemovePacemakerRemote:
+    """remove_pacemaker_remote(): drop the remote config on both sides."""
+
+    @pytest.fixture
+    def configured(self, cluster):
+        """A VM already carrying a full pacemaker-remote config."""
+        cluster.rbd.metadata[SRC_DISK].update(
+            {name: "value" for name in REMOTE_METADATA}
+        )
+        return cluster
+
+    def test_the_metadata_are_removed(self, configured):
+        vmc.remove_pacemaker_remote(SRC)
+        assert not set(REMOTE_METADATA) & set(
+            configured.rbd.metadata[SRC_DISK]
+        )
+
+    def test_the_crm_meta_attributes_are_removed(self, configured):
+        vmc.remove_pacemaker_remote(SRC)
+        for key in REMOTE_META:
+            assert ("remove_meta", key) in configured.pacemaker.calls
+
+    def test_a_vm_without_the_metadata_is_still_cleaned(self, cluster):
+        vmc.remove_pacemaker_remote(SRC)
+        for key in REMOTE_META:
+            assert ("remove_meta", key) in cluster.pacemaker.calls
+
+    def test_a_partial_config_stops_at_the_first_gap(self, cluster):
+        cluster.rbd.metadata[SRC_DISK]["_remote_node"] = "remote1"
+        vmc.remove_pacemaker_remote(SRC)
+        assert "_remote_node" not in cluster.rbd.metadata[SRC_DISK]
+
+
+class TestAddPacemakerRemote:
+    """add_pacemaker_remote(): store the remote config on both sides."""
+
+    def test_the_node_and_address_are_stored(self, cluster):
+        vmc.add_pacemaker_remote(SRC, "remote1", "10.0.0.1")
+        assert cluster.rbd.metadata[SRC_DISK]["_remote_node"] == "remote1"
+        assert (
+            cluster.rbd.metadata[SRC_DISK]["_remote_node_address"]
+            == "10.0.0.1"
+        )
+        assert ("add_meta", "remote-node", "remote1") in (
+            cluster.pacemaker.calls
+        )
+        assert ("add_meta", "remote-addr", "10.0.0.1") in (
+            cluster.pacemaker.calls
+        )
+
+    def test_the_port_and_timeout_are_optional(self, cluster):
+        vmc.add_pacemaker_remote(SRC, "remote1", "10.0.0.1")
+        assert "_remote_node_port" not in cluster.rbd.metadata[SRC_DISK]
+        assert "_remote_node_timeout" not in cluster.rbd.metadata[SRC_DISK]
+        assert [
+            call for call in cluster.pacemaker.calls if call[0] == "add_meta"
+        ] == [
+            ("add_meta", "remote-addr", "10.0.0.1"),
+            ("add_meta", "remote-node", "remote1"),
+        ]
+
+    def test_the_port_and_timeout_are_stored_when_given(self, cluster):
+        vmc.add_pacemaker_remote(
+            SRC,
+            "remote1",
+            "10.0.0.1",
+            remote_node_port="3121",
+            remote_node_timeout="60s",
+        )
+        assert cluster.rbd.metadata[SRC_DISK]["_remote_node_port"] == "3121"
+        assert cluster.rbd.metadata[SRC_DISK]["_remote_node_timeout"] == "60s"
+        assert ("add_meta", "remote-port", "3121") in cluster.pacemaker.calls
+        assert ("add_meta", "remote-connect-timeout", "60s") in (
+            cluster.pacemaker.calls
+        )
+
+    def test_a_bad_remote_node_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.add_pacemaker_remote(SRC, "not a name", "10.0.0.1")
+        assert cluster.rbd.calls == []
 
 
 class TestConsole:
