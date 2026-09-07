@@ -48,7 +48,10 @@ class RbdManager:
             self._ioctx = self._cluster.open_ioctx(self._pool)
             self.set_namespace(self._namespace)
             logger.info("Module has been successfully initialized")
-        except RbdException as err:
+        except Exception as err:
+            # Not RbdException: the calls above are the Ceph bindings, which
+            # signal a failure with their own exceptions. Catching this
+            # module's own class caught nothing and logged nothing.
             logger.warning("Init not successful: " + str(err))
             raise err
 
@@ -131,11 +134,7 @@ class RbdManager:
         """
         Return an image instance for a given img name.
         """
-        img_inst = Image(self._ioctx, img)
-        if img_inst is None:
-            raise RbdException("Could not find image " + img)
-        else:
-            return img_inst
+        return Image(self._ioctx, img)
 
     def create_image(self, img, size, overwrite=True):
         """
@@ -248,8 +247,8 @@ class RbdManager:
         """
         Rollback image to snapshot.
         """
+        img_inst = self._get_image(img)
         try:
-            img_inst = self._get_image(img)
             img_inst.rollback_to_snap(snap)
         finally:
             img_inst.close()
@@ -449,11 +448,7 @@ class RbdManager:
         """
         Returns a group instance for a given group name
         """
-        group_inst = Group(self._ioctx, group)
-        if group_inst is None:
-            raise RbdException("Could not find group " + group)
-        else:
-            return group_inst
+        return Group(self._ioctx, group)
 
     def create_group(self, group):
         """
