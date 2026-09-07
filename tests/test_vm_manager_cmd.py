@@ -654,13 +654,6 @@ class TestMainClone:
         _, args, _ = api.only
         assert args[0]["live_migration"] is True
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="the clone branch of main() never sets args.enable, and "
-        "_configure_vm() treats a missing 'enable' key as True, so "
-        "'clone --disable' enables the clone anyway. Same root cause as "
-        "TestMainCreate.test_disable_is_forwarded_as_enable_false.",
-    )
     def test_disable_is_forwarded_as_enable_false(self, run_cli, api):
         run_cli("clone", "-n", "vm1", "--dst_name", "vm2", "--disable")
         _, args, _ = api.only
