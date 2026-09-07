@@ -957,3 +957,27 @@ class TestRollbackImage:
         with pytest.raises(RuntimeError, match="boom"):
             rbd.rollback_image(IMG, "snap1")
         assert [img.closed for img in ceph.opened] == [True]
+
+
+class TestConstructionFailure:
+    """A cluster that refuses the connection."""
+
+    @pytest.fixture
+    def failing(self, ceph, monkeypatch):
+        """Make connect() fail the way the Ceph bindings would."""
+
+        def connect(self):
+            raise OSError("Connection timed out")
+
+        monkeypatch.setattr(FakeRados, "connect", connect)
+        return ceph
+
+    def test_the_error_reaches_the_caller(self, failing, conf):
+        with pytest.raises(OSError, match="Connection timed out"):
+            RbdManager(ceph_conf=conf)
+
+    def test_the_failure_is_logged(self, failing, conf, caplog):
+        with caplog.at_level("WARNING", logger=rbd_manager.logger.name):
+            with pytest.raises(OSError):
+                RbdManager(ceph_conf=conf)
+        assert "Init not successful: Connection timed out" in caplog.text

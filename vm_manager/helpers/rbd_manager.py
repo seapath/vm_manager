@@ -48,7 +48,10 @@ class RbdManager:
             self._ioctx = self._cluster.open_ioctx(self._pool)
             self.set_namespace(self._namespace)
             logger.info("Module has been successfully initialized")
-        except RbdException as err:
+        except Exception as err:
+            # Not RbdException: the calls above are the Ceph bindings, which
+            # signal a failure with their own exceptions. Catching this
+            # module's own class caught nothing and logged nothing.
             logger.warning("Init not successful: " + str(err))
             raise err
 
