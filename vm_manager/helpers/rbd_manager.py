@@ -248,8 +248,8 @@ class RbdManager:
         """
         Rollback image to snapshot.
         """
+        img_inst = self._get_image(img)
         try:
-            img_inst = self._get_image(img)
             img_inst.rollback_to_snap(snap)
         finally:
             img_inst.close()
