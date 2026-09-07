@@ -50,6 +50,8 @@ REAL_ENABLE_VM = vmc.enable_vm
 REAL_REMOVE = vmc.remove
 REAL_CREATE_XML = vmc._create_xml
 REAL_GET_REMOTE_NODES = vmc._get_remote_nodes
+REAL_DISABLE_VM = vmc.disable_vm
+REAL_IS_ENABLED = vmc.is_enabled
 
 RBD_SECRET = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 
@@ -262,10 +264,6 @@ class FakePacemaker:
     def call_names(self):
         return [call[0] for call in self.calls]
 
-    def list_resources(self):
-        self.calls.append(("list_resources",))
-        return list(self.collaborators.resources)
-
     def add_vm(self, vm_options, nostart=False):
         self.calls.append(("add_vm", dict(vm_options), nostart))
         if not self.collaborators.add_vm_fails:
@@ -288,6 +286,21 @@ class FakePacemaker:
 
     def wait_for(self, state):
         self.calls.append(("wait_for", state))
+
+    def show(self):
+        self.calls.append(("show",))
+        return self.collaborators.state
+
+    def delete(self, force=False, clean=False):
+        self.calls.append(("delete", force, clean))
+        if self.vm_name not in self.collaborators.undeletable_resources:
+            self.collaborators.resources.discard(self.vm_name)
+
+    def start(self):
+        self.calls.append(("start",))
+
+    def stop(self):
+        self.calls.append(("stop",))
 
 
 class FakeDomain:
@@ -372,6 +385,11 @@ class Collaborators:
         self.pacemakers = []
         self.resources = set()
         self.add_vm_fails = False
+        # What show() reports for the resource under test.
+        self.state = "Stopped (disabled)"
+        # Resources a delete must not remove, to simulate a resource
+        # that survives the call that was supposed to delete it.
+        self.undeletable_resources = set()
         self.observer = None
         self.remote_nodes = []
         self.enabled = []
@@ -459,6 +477,17 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
         def __init__(self, vm_name):
             super().__init__(collaborators, vm_name)
 
+        def list_resources(self=None):
+            """Answer both call styles.
+
+            The real Pacemaker declares this static, and list_vms() and
+            is_enabled() do call it on the class. Every other caller has
+            an instance, whose call sequence the tests assert on.
+            """
+            if self is not None:
+                self.calls.append(("list_resources",))
+            return list(collaborators.resources)
+
         @staticmethod
         def is_valid_host(host):
             return host in collaborators.valid_hosts
@@ -523,6 +552,20 @@ def real_remove(monkeypatch, cluster):
 def real_remote_nodes(monkeypatch, cluster):
     """Put the real _get_remote_nodes() back, enable_vm mocks it away."""
     monkeypatch.setattr(vmc, "_get_remote_nodes", REAL_GET_REMOTE_NODES)
+    return cluster
+
+
+@pytest.fixture
+def real_disable_vm(monkeypatch, cluster):
+    """Put the real disable_vm() back, to test it rather than mock it."""
+    monkeypatch.setattr(vmc, "disable_vm", REAL_DISABLE_VM)
+    return cluster
+
+
+@pytest.fixture
+def real_is_enabled(monkeypatch, cluster):
+    """Put the real is_enabled() back, to test it rather than mock it."""
+    monkeypatch.setattr(vmc, "is_enabled", REAL_IS_ENABLED)
     return cluster
 
 
@@ -1721,6 +1764,130 @@ class TestRemove:
         with caplog.at_level("INFO", logger=vmc.logger.name):
             vmc.remove(SRC)
         assert "removed" in caplog.text
+
+
+class TestDisableVm:
+    """disable_vm(): take the resource out of Pacemaker, keep the disks."""
+
+    def test_absent_vm_is_only_warned_about(self, real_disable_vm, caplog):
+        with caplog.at_level("WARNING", logger=vmc.logger.name):
+            vmc.disable_vm(SRC)
+        assert "is not on the cluster" in caplog.text
+        assert "delete" not in real_disable_vm.pacemaker.call_names
+
+    def test_failed_vm_is_cleaned_and_force_deleted(self, real_disable_vm):
+        real_disable_vm.resources.add(SRC)
+        real_disable_vm.state = "FAILED (blocked)"
+        vmc.disable_vm(SRC)
+        assert ("delete", True, True) in real_disable_vm.pacemaker.calls
+
+    def test_running_vm_is_force_deleted(self, real_disable_vm):
+        real_disable_vm.resources.add(SRC)
+        real_disable_vm.state = "Started"
+        vmc.disable_vm(SRC)
+        assert ("delete", True, False) in real_disable_vm.pacemaker.calls
+
+    def test_stopped_vm_is_deleted_without_force(self, real_disable_vm):
+        real_disable_vm.resources.add(SRC)
+        real_disable_vm.state = "Stopped (disabled)"
+        vmc.disable_vm(SRC)
+        assert ("delete", False, False) in real_disable_vm.pacemaker.calls
+
+    def test_surviving_resource_is_reported(self, real_disable_vm):
+        real_disable_vm.resources.add(SRC)
+        real_disable_vm.undeletable_resources.add(SRC)
+        with pytest.raises(Exception, match="Could not remove VM"):
+            vmc.disable_vm(SRC)
+
+    def test_success_is_logged(self, real_disable_vm, caplog):
+        real_disable_vm.resources.add(SRC)
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.disable_vm(SRC)
+        assert "disabled from the cluster" in caplog.text
+
+
+class TestStart:
+    """start(): resume a resource Pacemaker already knows."""
+
+    def test_absent_vm_is_reported(self, cluster):
+        with pytest.raises(Exception, match="is not on the cluster"):
+            vmc.start(SRC)
+
+    def test_stopped_vm_is_started_and_waited_for(self, cluster):
+        cluster.resources.add(SRC)
+        cluster.state = "Stopped (disabled)"
+        vmc.start(SRC)
+        assert ("start",) in cluster.pacemaker.calls
+        assert ("wait_for", "Started") in cluster.pacemaker.calls
+
+    def test_started_vm_is_left_alone(self, cluster, caplog):
+        cluster.resources.add(SRC)
+        cluster.state = "Started"
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.start(SRC)
+        assert "start" not in cluster.pacemaker.call_names
+        assert "already started" in caplog.text
+
+
+class TestIsEnabled:
+    """is_enabled(): whether Pacemaker carries the resource."""
+
+    def test_resource_on_the_cluster(self, real_is_enabled):
+        real_is_enabled.resources.add(SRC)
+        assert vmc.is_enabled(SRC) is True
+
+    def test_resource_outside_the_cluster(self, real_is_enabled):
+        assert vmc.is_enabled(SRC) is False
+
+
+class TestStatus:
+    """status(): Ceph decides Undefined, Pacemaker decides the rest."""
+
+    def test_vm_without_a_group_is_undefined(self, cluster):
+        assert vmc.status("ghostvm") == "Undefined"
+
+    def test_vm_outside_the_cluster_is_disabled(self, cluster):
+        assert vmc.status(SRC) == "Disabled"
+
+    def test_enabled_vm_reports_the_pacemaker_state(self, cluster):
+        cluster.resources.add(SRC)
+        cluster.state = "Started"
+        assert vmc.status(SRC) == "Started"
+
+    def test_undefined_vm_does_not_reach_pacemaker(self, cluster):
+        vmc.status("ghostvm")
+        assert cluster.pacemakers == []
+
+
+class TestStop:
+    """stop(): ask Pacemaker to stop the resource and wait for it."""
+
+    def test_absent_vm_is_reported(self, cluster):
+        with pytest.raises(Exception, match="is not on the cluster"):
+            vmc.stop(SRC)
+
+    def test_running_vm_is_stopped_and_waited_for(self, cluster):
+        cluster.resources.add(SRC)
+        cluster.state = "Started"
+        vmc.stop(SRC)
+        assert ("stop",) in cluster.pacemaker.calls
+        assert ("wait_for", "Stopped (disabled)") in cluster.pacemaker.calls
+
+    def test_stopped_vm_is_left_alone(self, cluster, caplog):
+        cluster.resources.add(SRC)
+        cluster.state = "Stopped (disabled)"
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.stop(SRC)
+        assert "stop" not in cluster.pacemaker.call_names
+        assert "already stopped" in caplog.text
+
+    def test_force_is_announced_as_unimplemented(self, cluster, caplog):
+        cluster.resources.add(SRC)
+        cluster.state = "Started"
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc.stop(SRC, force=True)
+        assert "isn't implemented yet" in caplog.text
+        assert ("stop",) in cluster.pacemaker.calls
 
 
 class TestListAllUuids:
