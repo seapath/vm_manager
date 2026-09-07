@@ -538,16 +538,12 @@ def main():
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             args.base_xml = xml.read()
-        if "live_migration" in args:
-            args.live_migration = args.enable_live_migration
-        if "add_crm_config_cmd" in args:
-            args.crm_config_cmd = args.add_crm_config_cmd
+        args.live_migration = args.enable_live_migration
+        args.crm_config_cmd = args.add_crm_config_cmd
         if "disable" in args and args.disable:
-            if "enable" in args:
-                args.enable = not args.disable
+            args.enable = not args.disable
         else:
-            if "enable" in args:
-                args.enable = True
+            args.enable = True
         vm_manager.create(vars(args))
     elif args.command == "clone":
         args.base_xml = None

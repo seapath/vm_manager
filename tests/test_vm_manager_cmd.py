@@ -614,26 +614,12 @@ class TestMainCreate:
         options = self._create(run_cli, api, xml_file, "--pinned-host", "hyp1")
         assert options["pinned_host"] == "hyp1"
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason="main() guards the assignment with 'if \"enable\" in args', "
-        "but 'enable' is never an argparse dest for create, so args.enable "
-        "is never set. _configure_vm() treats a missing 'enable' key as "
-        "True, so 'create --disable' enables the VM anyway.",
-    )
     def test_disable_is_forwarded_as_enable_false(
         self, run_cli, api, xml_file
     ):
         options = self._create(run_cli, api, xml_file, "--disable")
         assert options["enable"] is False
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason='main() guards the assignment with \'if "live_migration" in '
-        "args', but 'live_migration' is never an argparse dest, so the key "
-        "is never set and _configure_vm() never writes the _live_migration "
-        "metadata. clone and add-to-cluster assign it unconditionally.",
-    )
     def test_enable_live_migration_is_renamed(self, run_cli, api, xml_file):
         options = self._create(
             run_cli, api, xml_file, "--enable-live-migration"
