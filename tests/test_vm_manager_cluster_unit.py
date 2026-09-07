@@ -50,6 +50,7 @@ REAL_ENABLE_VM = vmc.enable_vm
 REAL_REMOVE = vmc.remove
 REAL_CREATE_XML = vmc._create_xml
 REAL_GET_REMOTE_NODES = vmc._get_remote_nodes
+REAL_CREATE_VM_GROUP = vmc._create_vm_group
 REAL_DISABLE_VM = vmc.disable_vm
 REAL_IS_ENABLED = vmc.is_enabled
 
@@ -98,6 +99,9 @@ class FakeRbd:
         # survive the call that was supposed to delete them.
         self.undeletable_groups = set()
         self.undeletable_images = set()
+        # Group names a creation must not create, to simulate Ceph
+        # accepting the call and producing nothing.
+        self.uncreatable_groups = set()
         # Image name -> list of {"id", "name", "timestamp"}
         self.snapshots = {}
         self.calls = []
@@ -173,6 +177,11 @@ class FakeRbd:
     def list_group_images(self, name):
         self._record("list_group_images", name)
         return sorted(self.groups[name])
+
+    def create_group(self, name):
+        self._record("create_group", name)
+        if name not in self.uncreatable_groups:
+            self.groups.setdefault(name, set())
 
     def remove_group(self, name):
         self._record("remove_group", name)
@@ -552,6 +561,13 @@ def real_remove(monkeypatch, cluster):
 def real_remote_nodes(monkeypatch, cluster):
     """Put the real _get_remote_nodes() back, enable_vm mocks it away."""
     monkeypatch.setattr(vmc, "_get_remote_nodes", REAL_GET_REMOTE_NODES)
+    return cluster
+
+
+@pytest.fixture
+def real_create_vm_group(monkeypatch, cluster):
+    """Put the real _create_vm_group() back, to test it for real."""
+    monkeypatch.setattr(vmc, "_create_vm_group", REAL_CREATE_VM_GROUP)
     return cluster
 
 
@@ -1946,6 +1962,53 @@ class TestGetAllDiskNames:
         assert vmc._get_all_disk_names(cluster.rbd, "ghostvm") == [
             vmc.OS_DISK_PREFIX + "ghostvm"
         ]
+
+
+class TestCreateVmGroup:
+    """_create_vm_group(): the Ceph group holding a VM's disks."""
+
+    def test_group_is_created(self, real_create_vm_group):
+        vmc._create_vm_group(DST)
+        assert ("create_group", DST) in real_create_vm_group.rbd.calls
+        assert DST in real_create_vm_group.rbd.groups
+
+    def test_existing_group_is_refused(self, real_create_vm_group):
+        with pytest.raises(Exception, match="already exists"):
+            vmc._create_vm_group(SRC)
+        assert "create_group" not in real_create_vm_group.rbd.call_names
+
+    def test_force_removes_the_existing_vm_first(self, real_create_vm_group):
+        vmc._create_vm_group(SRC, force=True)
+        assert real_create_vm_group.removed == [SRC]
+        assert ("create_group", SRC) in real_create_vm_group.rbd.calls
+
+    def test_group_that_does_not_appear_is_reported(
+        self, real_create_vm_group
+    ):
+        real_create_vm_group.rbd.uncreatable_groups.add(DST)
+        with pytest.raises(Exception, match="Could not create group"):
+            vmc._create_vm_group(DST)
+
+    def test_success_is_logged(self, real_create_vm_group, caplog):
+        with caplog.at_level("INFO", logger=vmc.logger.name):
+            vmc._create_vm_group(DST)
+        assert "created successfully" in caplog.text
+
+
+class TestListVms:
+    """list_vms(): Ceph groups, or the Pacemaker resources."""
+
+    def test_all_vms_come_from_the_ceph_groups(self, cluster):
+        cluster.rbd.groups[DST] = set()
+        assert sorted(vmc.list_vms()) == sorted([SRC, DST])
+
+    def test_enabled_vms_come_from_pacemaker(self, cluster):
+        cluster.resources.add(DST)
+        assert vmc.list_vms(enabled=True) == [DST]
+
+    def test_enabled_does_not_reach_ceph(self, cluster):
+        vmc.list_vms(enabled=True)
+        assert cluster.rbd.calls == []
 
 
 def snapshot(index, name, timestamp):
