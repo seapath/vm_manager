@@ -131,11 +131,7 @@ class RbdManager:
         """
         Return an image instance for a given img name.
         """
-        img_inst = Image(self._ioctx, img)
-        if img_inst is None:
-            raise RbdException("Could not find image " + img)
-        else:
-            return img_inst
+        return Image(self._ioctx, img)
 
     def create_image(self, img, size, overwrite=True):
         """
@@ -449,11 +445,7 @@ class RbdManager:
         """
         Returns a group instance for a given group name
         """
-        group_inst = Group(self._ioctx, group)
-        if group_inst is None:
-            raise RbdException("Could not find group " + group)
-        else:
-            return group_inst
+        return Group(self._ioctx, group)
 
     def create_group(self, group):
         """
