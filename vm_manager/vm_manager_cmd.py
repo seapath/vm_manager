@@ -552,6 +552,10 @@ def main():
                 args.base_xml = xml.read()
         args.live_migration = args.enable_live_migration
         args.crm_config_cmd = args.add_crm_config_cmd
+        if "disable" in args and args.disable:
+            args.enable = not args.disable
+        else:
+            args.enable = True
         vm_manager.clone(vars(args))
     elif args.command == "disable":
         vm_manager.disable_vm(args.name)
