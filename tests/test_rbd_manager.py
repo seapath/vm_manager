@@ -77,6 +77,9 @@ class FakeCeph:
         # Names whose Image constructor must fail, to simulate an image
         # that disappears between two calls.
         self.unopenable = set()
+        # Every FakeImage the code under test opened, so a test can check
+        # the helper closed what it opened.
+        self.opened = []
 
     def add_image(self, name, size=0):
         self.images[name] = ImageState(size)
@@ -188,6 +191,7 @@ class FakeImage:
         self.state = self.ceph.images[name]
         self.closed = False
         self.close_count = 0
+        self.ceph.opened.append(self)
 
     def close(self):
         self.closed = True
@@ -930,3 +934,26 @@ class TestRollbackImage:
         ceph.add_snap(IMG, "snap1")
         rbd.rollback_image(IMG, "snap1")
         assert ceph.images[IMG].rolled_back_to == "snap1"
+
+    def test_an_absent_image_reports_what_went_wrong(self, rbd):
+        """The cleanup used to run over an unbound name and mask this."""
+        with pytest.raises(ImageNotFound):
+            rbd.rollback_image("absent", "snap1")
+
+    def test_the_image_is_closed_afterwards(self, rbd, ceph):
+        ceph.add_snap(IMG, "snap1")
+        rbd.rollback_image(IMG, "snap1")
+        assert [img.closed for img in ceph.opened] == [True]
+
+    def test_the_image_is_closed_even_when_the_rollback_fails(
+        self, rbd, ceph, monkeypatch
+    ):
+        ceph.add_snap(IMG, "snap1")
+        monkeypatch.setattr(
+            FakeImage,
+            "rollback_to_snap",
+            lambda self, snap: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+        with pytest.raises(RuntimeError, match="boom"):
+            rbd.rollback_image(IMG, "snap1")
+        assert [img.closed for img in ceph.opened] == [True]
