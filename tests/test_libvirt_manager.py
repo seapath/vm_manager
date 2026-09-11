@@ -1,6 +1,8 @@
 # Copyright (C) 2025, RTE (http://www.rte-france.com)
 # SPDX-License-Identifier: Apache-2.0
 
+import subprocess
+
 import libvirt
 import pytest
 
@@ -111,3 +113,80 @@ class TestAutostart:
         libvirt_conn.set_autostart(vm_name, False)
         domain = libvirt_conn._conn.lookupByName(vm_name)
         assert domain.autostart() == 0
+
+
+class TestExportConfiguration:
+    """export_configuration must not go through a shell.
+
+    These tests stub subprocess.run, so they need no libvirt daemon.
+    """
+
+    def _stub(self, monkeypatch, stdout=b"<domain/>"):
+        calls = []
+
+        def fake_run(command, **kwargs):
+            calls.append((command, kwargs))
+            return subprocess.CompletedProcess(command, 0, stdout=stdout)
+
+        monkeypatch.setattr(
+            "vm_manager.helpers.libvirt.subprocess.run", fake_run
+        )
+        return calls
+
+    def test_runs_virsh_with_an_argv_list(self, tmp_path, monkeypatch):
+        calls = self._stub(
+            monkeypatch, stdout=b"<domain><name>test0</name></domain>"
+        )
+        xml_path = tmp_path / "test0.xml"
+
+        LibVirtManager.export_configuration("test0", str(xml_path))
+
+        command, kwargs = calls[0]
+        assert command == [
+            "/usr/bin/virsh",
+            "-c",
+            "qemu:///system",
+            "dumpxml",
+            "test0",
+        ]
+        assert kwargs["check"] is True
+        assert kwargs["stdout"] == subprocess.PIPE
+        assert not kwargs.get("shell", False)
+        assert xml_path.read_bytes() == (
+            b"<domain><name>test0</name></domain>"
+        )
+
+    def test_shell_metacharacters_are_a_single_argument(
+        self, tmp_path, monkeypatch
+    ):
+        calls = self._stub(monkeypatch)
+        payload = "test0; id; #"
+
+        LibVirtManager.export_configuration(
+            payload, str(tmp_path / "test0.xml")
+        )
+
+        command, kwargs = calls[0]
+        assert command[-1] == payload
+        assert command == [
+            "/usr/bin/virsh",
+            "-c",
+            "qemu:///system",
+            "dumpxml",
+            payload,
+        ]
+        assert not kwargs.get("shell", False)
+
+    def test_virsh_failure_propagates(self, tmp_path, monkeypatch):
+        def fake_run(command, **kwargs):
+            raise subprocess.CalledProcessError(1, command)
+
+        monkeypatch.setattr(
+            "vm_manager.helpers.libvirt.subprocess.run", fake_run
+        )
+        xml_path = tmp_path / "test0.xml"
+
+        with pytest.raises(subprocess.CalledProcessError):
+            LibVirtManager.export_configuration("test0", str(xml_path))
+
+        assert not xml_path.exists()
