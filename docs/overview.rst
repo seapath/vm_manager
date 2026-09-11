@@ -21,8 +21,29 @@ Entry points
 
 - ``vm_manager_cmd`` — main CLI exposing all VM operations as subcommands
 - ``libvirt_cmd`` — lower-level CLI for direct libvirt operations
-- ``vm_manager_api`` — Flask REST API (``/``, ``/status/<guest>``,
-  ``/stop/<guest>``, ``/start/<guest>``)
+- ``vm_manager_api`` — Flask REST API (``GET /``, ``GET /status/<guest>``,
+  ``GET /stop/<guest>``, ``GET /start/<guest>``). Cross-site requests to
+  the state-changing routes are refused, and the API must stay behind the
+  authenticated, TLS-terminating nginx.
+
+REST API security
+-----------------
+
+The REST API authenticates nobody: it relies on the nginx in front of it
+(TLS, basic auth, ACL) and must never be published directly.
+
+The state-changing routes (``/stop`` and ``/start``) stay on ``GET`` to
+keep the API compatible. To protect them against CSRF, the application
+itself refuses requests that a browser marks as cross-site (``403``),
+based on the ``Sec-Fetch-Site`` and ``Origin`` request headers. Requests
+without these headers, such as ``curl`` or scripts, are accepted.
+
+No web server configuration change is required: the protection lives in
+``vm_manager_api`` and works with the existing nginx setup, as long as
+nginx forwards the ``Host``, ``Origin`` and ``Sec-Fetch-Site`` headers
+unchanged (the default for ``proxy_pass``/gunicorn setups). The
+``Host`` header must be the one the browser used, otherwise same-origin
+requests carrying an ``Origin`` header are refused.
 
 Architecture
 ------------
