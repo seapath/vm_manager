@@ -12,6 +12,9 @@ seapath/ansible serves `app` with gunicorn on a unix socket, behind an
 nginx that carries the TLS, the authentication and the ACL. main() is a
 debug entry point, and since the application authenticates nobody on its
 own, the address it binds to is worth pinning down in a test.
+
+The public API keeps /stop and /start on GET, so the tests assert that
+cross-site requests to them are refused before the backend is reached.
 """
 
 import pytest
@@ -89,3 +92,41 @@ def test_start_reports_the_backend_error(client, monkeypatch):
     assert (
         response.get_data(as_text=True) == "RuntimeError: no such VM: guest0"
     )
+
+
+@pytest.mark.parametrize("action", ["stop", "start"])
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "cross-site"},
+        {"Sec-Fetch-Site": "same-site"},
+        {"Origin": "https://evil.example"},
+    ],
+)
+def test_cross_site_request_is_refused(client, monkeypatch, action, headers):
+    def unexpected(guest):
+        raise AssertionError("the backend must not run cross-site")
+
+    monkeypatch.setattr(vm_manager_api.v, action, unexpected)
+
+    response = client.get(f"/{action}/guest0", headers=headers)
+
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"Sec-Fetch-Site": "same-origin"},
+        {"Origin": "http://localhost"},
+        {},
+    ],
+)
+def test_same_origin_or_non_browser_request_is_allowed(
+    client, monkeypatch, headers
+):
+    monkeypatch.setattr(vm_manager_api.v, "stop", lambda guest: "ok")
+
+    response = client.get("/stop/guest0", headers=headers)
+
+    assert response.status_code == 200
