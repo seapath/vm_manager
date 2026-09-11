@@ -444,16 +444,15 @@ class Pacemaker:
         :return: the node where the resource is running or None if the resource
                  is not running or not found
         """
-        command = (
-            "crm status | "
-            + f'grep -E "^  \\* {resource}\\b" | '
-            + "grep Started | "
-            + "awk 'NF>1{print $NF}'"
-        )
-        ret = subprocess.run(command, shell=True, stdout=subprocess.PIPE)
-        host = ret.stdout.decode().strip()
-        if host == "":
-            logger.debug(f"Resource {resource} not found")
-            return None
-        logger.debug(f"Resource {resource} found on {host}")
-        return host
+        ret = subprocess.run(["crm", "status"], stdout=subprocess.PIPE)
+        pattern = re.compile(r"^  \* " + re.escape(resource) + r"\b")
+        for line in ret.stdout.decode().splitlines():
+            if not pattern.match(line) or "Started" not in line:
+                continue
+            fields = line.split()
+            if len(fields) > 1:
+                host = fields[-1]
+                logger.debug(f"Resource {resource} found on {host}")
+                return host
+        logger.debug(f"Resource {resource} not found")
+        return None
