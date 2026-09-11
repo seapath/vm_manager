@@ -428,10 +428,12 @@ class Pacemaker:
         :param host: the host to test
         :return: True if the host is in the cluster, false otherwise
         """
-        command = "bash -c \"grep -E '^" + host + "$' <(crm node server)\""
-        ret = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE)
-        ret.wait()
-        return ret.returncode == 0
+        ret = subprocess.run(
+            ["crm", "node", "server"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return host in ret.stdout.decode().splitlines()
 
     @staticmethod
     def find_resource(resource):
