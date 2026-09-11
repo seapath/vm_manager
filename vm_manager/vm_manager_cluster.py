@@ -1452,6 +1452,7 @@ def console(vm_name, ssh_user="libvirtadmin"):
 
     :param vm_name: the VM name to open the console
     """
+    _check_name(vm_name)
     # First we need to get the hypervisor where the VM is running
     host = Pacemaker.find_resource(vm_name)
     if not host:
