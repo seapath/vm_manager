@@ -447,27 +447,48 @@ class TestFindResource:
     """find_resource(): the node a resource runs on."""
 
     def test_the_host_is_returned(self, crm):
-        crm.stdout = b"hyp1\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         assert Pacemaker.find_resource(RESOURCE) == "hyp1"
 
     def test_a_resource_running_nowhere_gives_none(self, crm):
-        crm.stdout = b"\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE)).replace(
+            b"Started", b"Stopped"
+        )
         assert Pacemaker.find_resource(RESOURCE) is None
 
-    def test_the_resource_is_anchored_in_the_grep(self, crm):
+    def test_the_command_is_an_argv_without_a_shell(self, crm):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         Pacemaker.find_resource(RESOURCE)
-        assert r"^  \* vm1\b" in crm.command
+        assert crm.command == ["crm", "status"]
+        assert crm.kwargs.get("shell") is None
+
+    def test_a_longer_resource_name_is_not_matched(self, crm):
+        crm.stdout = status_output(
+            "  * vm1extra\t(ocf::seapath:VirtualDomain):\t" " Started hyp9",
+            RESOURCE_LINE.format(RESOURCE),
+        )
+        assert Pacemaker.find_resource(RESOURCE) == "hyp1"
 
     def test_the_lookup_is_logged(self, crm, caplog):
-        crm.stdout = b"hyp1\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         with caplog.at_level("DEBUG", logger=pacemaker.logger.name):
             Pacemaker.find_resource(RESOURCE)
         assert "found on hyp1" in caplog.text
 
     def test_a_miss_is_logged(self, crm, caplog):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE)).replace(
+            b"Started", b"Stopped"
+        )
         with caplog.at_level("DEBUG", logger=pacemaker.logger.name):
             Pacemaker.find_resource(RESOURCE)
         assert "not found" in caplog.text
+
+    @pytest.mark.parametrize("resource", ["$(id)", "x; id; #", "vm1 && id"])
+    def test_a_metacharacter_is_not_executed(self, crm, resource):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
+        assert Pacemaker.find_resource(resource) is None
+        assert crm.command == ["crm", "status"]
+        assert crm.kwargs.get("shell") is None
 
 
 class TestAddVm:
