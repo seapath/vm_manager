@@ -139,6 +139,7 @@ class FakeSubprocess:
     def __init__(self):
         self.calls = []
         self.error = None
+        self.stdout = b""
 
     def __getattr__(self, name):
         return getattr(subprocess, name)
@@ -147,6 +148,7 @@ class FakeSubprocess:
         self.calls.append((command, kwargs))
         if self.error is not None:
             raise self.error
+        return subprocess.CompletedProcess(command, 0, stdout=self.stdout)
 
     @property
     def command(self):
@@ -372,18 +374,27 @@ class TestConsole:
 
 
 class TestExportConfiguration:
-    """export_configuration(): dump the XML through a shell redirection."""
+    """export_configuration(): dump the XML to the given path."""
 
-    def test_the_dump_is_redirected_to_the_path(self, virsh):
+    def test_the_command_is_an_argv_without_a_shell(self, virsh):
+        virsh.stdout = b"<domain/>\n"
         LibVirtManager.export_configuration(VM, "/tmp/vm1.xml")
-        assert virsh.command == (
-            "/usr/bin/virsh -c 'qemu:///system' dumpxml vm1 > /tmp/vm1.xml"
-        )
+        assert virsh.command == [
+            "/usr/bin/virsh",
+            "-c",
+            "qemu:///system",
+            "dumpxml",
+            VM,
+        ]
+        assert virsh.calls[0][1].get("shell") is None
 
-    def test_it_runs_through_a_shell(self, virsh):
-        LibVirtManager.export_configuration(VM, "/tmp/vm1.xml")
-        assert virsh.calls[0][1]["shell"] is True
+    def test_the_dump_is_written_to_the_path(self, virsh, tmp_path):
+        virsh.stdout = b"<domain>vm1</domain>\n"
+        target = tmp_path / "vm1.xml"
+        LibVirtManager.export_configuration(VM, str(target))
+        assert target.read_bytes() == b"<domain>vm1</domain>\n"
 
-    def test_a_failure_is_not_swallowed(self, virsh):
-        LibVirtManager.export_configuration(VM, "/tmp/vm1.xml")
+    def test_a_failure_is_not_swallowed(self, virsh, tmp_path):
+        virsh.stdout = b"<domain/>\n"
+        LibVirtManager.export_configuration(VM, str(tmp_path / "vm1.xml"))
         assert virsh.calls[0][1]["check"] is True
