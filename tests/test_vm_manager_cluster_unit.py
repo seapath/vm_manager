@@ -418,6 +418,7 @@ class Collaborators:
         self.disabled = []
         self.enabled_state = False
         self.resource_host = None
+        self.find_calls = []
         self.subprocess = FakeSubprocess()
 
     @property
@@ -516,6 +517,7 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
 
         @staticmethod
         def find_resource(vm_name):
+            collaborators.find_calls.append(vm_name)
             return collaborators.resource_host
 
     monkeypatch.setattr(vmc, "Pacemaker", PacemakerStub)
@@ -2438,6 +2440,7 @@ class TestConsole:
     def test_console_opens_on_the_running_host(self, cluster):
         cluster.resource_host = "hyp1"
         vmc.console(SRC)
+        assert cluster.find_calls == [SRC]
         assert ("console", SRC) in cluster.libvirt.calls
 
     def test_uri_targets_the_host_and_the_ssh_user(self, cluster):
@@ -2455,6 +2458,18 @@ class TestConsole:
             vmc.console(SRC)
         assert exit_info.value.code == 1
         assert "is not running on any hypervisor" in capsys.readouterr().err
+
+    def test_a_shell_metacharacter_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.console("x; id; #")
+        assert cluster.find_calls == []
+        assert cluster.libvirt.calls == []
+
+    def test_a_command_substitution_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.console("$(id)")
+        assert cluster.find_calls == []
+        assert cluster.libvirt.calls == []
 
 
 class TestCreateXml:
