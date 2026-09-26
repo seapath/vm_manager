@@ -122,6 +122,14 @@ def get_parser():
             "add-to-cluster",
             help="Add an existing libvirt VM to the cluster",
         )
+        set_alloc_parser = subparsers.add_parser(
+            "set-seapath-alloc",
+            help="Set the seapath-alloc CPU pinning profile of a VM",
+        )
+        subparsers.add_parser(
+            "get-seapath-alloc",
+            help="Get the seapath-alloc CPU pinning profile of a VM",
+        )
 
     for name, subparser in subparsers.choices.items():
         if name not in ("list", "console"):
@@ -372,6 +380,17 @@ def get_parser():
             "--xml", type=str, required=False, help="VM libvirt XML path"
         )
 
+        for p in [create_parser, clone_parser]:
+            p.add_argument(
+                "--seapath-alloc",
+                type=str,
+                required=False,
+                default=None,
+                metavar="FILE",
+                help="seapath-alloc YAML pinning profile to store in RBD "
+                "image metadata",
+            )
+
         import_parser.add_argument(
             "-i",
             "--image",
@@ -514,6 +533,12 @@ def get_parser():
             help="SSH user to connect to the VM",
         )
 
+        set_alloc_parser.add_argument(
+            "file",
+            type=str,
+            help="Path to the seapath-alloc YAML pinning profile file",
+        )
+
     # if cluster_mode end
 
     return parser
@@ -538,6 +563,9 @@ def main():
     elif args.command == "create":
         with open(args.xml, "r") as xml:
             args.base_xml = xml.read()
+        if args.seapath_alloc:
+            with open(args.seapath_alloc, "r") as f:
+                args.seapath_alloc = f.read()
         if "live_migration" in args:
             args.live_migration = args.enable_live_migration
         if "add_crm_config_cmd" in args:
@@ -554,6 +582,9 @@ def main():
         if args.xml:
             with open(args.xml, "r") as xml:
                 args.base_xml = xml.read()
+        if args.seapath_alloc:
+            with open(args.seapath_alloc, "r") as f:
+                args.seapath_alloc = f.read()
         args.live_migration = args.enable_live_migration
         args.crm_config_cmd = args.add_crm_config_cmd
         vm_manager.clone(vars(args))
@@ -603,6 +634,12 @@ def main():
         else:
             args.enable = True
         vm_manager.add_to_cluster(vars(args))
+    elif args.command == "set-seapath-alloc":
+        with open(args.file, "r") as f:
+            yaml_str = f.read()
+        vm_manager.set_seapath_alloc(args.name, yaml_str)
+    elif args.command == "get-seapath-alloc":
+        print(vm_manager.get_seapath_alloc(args.name))
     elif args.command == "autostart":
         vm_manager.autostart(args.name, args.enable)
     elif args.command == "console":
