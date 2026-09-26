@@ -37,6 +37,8 @@ if cluster_mode:
         remove_pacemaker_remote,
         add_pacemaker_remote,
         add_to_cluster,
+        set_seapath_alloc,
+        get_seapath_alloc,
     )
 else:
     from .vm_manager_libvirt import (

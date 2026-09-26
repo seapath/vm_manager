@@ -2584,3 +2584,41 @@ class TestObserverHost:
     def test_no_observer_gives_none(self, cluster_conf):
         cluster_conf.write_text("[machines]\nhypervisor = hyp1\n")
         assert vmc._get_observer_host() is None
+
+
+class TestSeapathAlloc:
+    """The seapath-alloc pinning profile, stored on the system disk."""
+
+    PROFILE = "version: 1\nvcpus:\n  isolation: exclusive_physical\n"
+
+    def test_create_stores_the_profile(self, real_configure_vm):
+        vmc._configure_vm(configure_options(seapath_alloc=self.PROFILE))
+        stored = real_configure_vm.rbd.metadata[DST_DISK]
+        assert stored["_seapath_alloc"] == self.PROFILE
+
+    def test_create_without_a_profile_stores_none(self, real_configure_vm):
+        vmc._configure_vm(configure_options())
+        stored = real_configure_vm.rbd.metadata[DST_DISK]
+        assert "_seapath_alloc" not in stored
+
+    def test_clone_inherits_the_profile(self, cluster):
+        cluster.rbd.metadata[SRC_DISK]["_seapath_alloc"] = self.PROFILE
+        vmc.clone(options(base_xml=BASE_XML))
+        assert cluster.configured[0]["seapath_alloc"] == self.PROFILE
+
+    def test_clone_keeps_the_profile_it_is_given(self, cluster):
+        cluster.rbd.metadata[SRC_DISK]["_seapath_alloc"] = self.PROFILE
+        vmc.clone(options(base_xml=BASE_XML, seapath_alloc="version: 1\n"))
+        assert cluster.configured[0]["seapath_alloc"] == "version: 1\n"
+
+    def test_clone_of_a_source_without_a_profile(self, cluster):
+        vmc.clone(options(base_xml=BASE_XML))
+        assert "seapath_alloc" not in cluster.configured[0]
+
+    def test_the_profile_is_written_and_read_back(self, cluster):
+        vmc.set_seapath_alloc(SRC, self.PROFILE)
+        assert cluster.rbd.metadata[SRC_DISK]["_seapath_alloc"] == self.PROFILE
+        assert vmc.get_seapath_alloc(SRC) == self.PROFILE
+
+    def test_a_vm_without_a_profile_reads_none(self, cluster):
+        assert vmc.get_seapath_alloc(SRC) is None
