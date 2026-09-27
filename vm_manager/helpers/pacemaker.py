@@ -346,12 +346,19 @@ class Pacemaker:
         Set the VM default location.
 
         The VM will be deployed on the given node unless the node is up.
+
+        Written as a constraint of its own rather than with
+        `crm resource move`, whose `cli-prefer-` constraint is
+        indistinguishable from a manual move and is removed by
+        `crm resource clear`.
         """
         args = [
             "crm",
-            "resource",
-            "move",
+            "configure",
+            "location",
+            f"seapath-preferred-{self._resource}",
             self._resource,
+            "inf:",
             node,
         ]
 
