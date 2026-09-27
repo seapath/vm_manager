@@ -313,9 +313,17 @@ class TestLocations:
             "hyp1",
         ]
 
-    def test_default_location_moves_the_resource(self, p, crm):
+    def test_default_location_names_the_constraint(self, p, crm):
         p.default_location("hyp1")
-        assert crm.command == ["crm", "resource", "move", RESOURCE, "hyp1"]
+        assert crm.command == [
+            "crm",
+            "configure",
+            "location",
+            "seapath-preferred-vm1",
+            RESOURCE,
+            "inf:",
+            "hyp1",
+        ]
 
 
 class TestAddColocation:
