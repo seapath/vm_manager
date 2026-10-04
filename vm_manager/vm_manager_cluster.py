@@ -29,6 +29,11 @@ RESERVED_NAMES = ["xml"]
 OS_DISK_PREFIX = "system_"
 DATA_DISK_PREFIX = "data_"
 
+# Host names stored in RBD metadata and later reused by root-run cluster
+# paths. Keep this strict: the value is persisted on a shared image and
+# re-read on every node that acts on the VM.
+HOST_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
 logger = logging.getLogger(__name__)
 
 """
@@ -77,6 +82,17 @@ def _check_name(name):
         or not bool(re.match("^[a-zA-Z0-9]*$", name))
     ):
         raise ValueError("Parameter must not contain spaces or special chars")
+
+
+def _check_host(host):
+    """
+    Raise ValueError if host is not a valid host name.
+
+    Valid host names start with an alphanumeric character and only contain
+    alphanumerics, dots, hyphens and underscores.
+    """
+    if not isinstance(host, str) or not HOST_PATTERN.fullmatch(host):
+        raise ValueError(f"Invalid host name: {host!r}")
 
 
 def _create_vm_group(vm_name, force=False):
@@ -205,6 +221,12 @@ def _configure_vm(vm_options):
     Configure VM vm_name: set initial metadata, define libvirt xml
     configuration and add it on Pacemaker if enable is set to True.
     """
+
+    # Validate placement constraints before writing anything to the shared
+    # RBD metadata, where a bad value would outlive this call.
+    for host_option in ("pinned_host", "preferred_host"):
+        if host_option in vm_options:
+            _check_host(vm_options[host_option])
 
     # Build list of additional Ceph disk names for XML generation
     additional_count = vm_options.get(
@@ -403,6 +425,11 @@ def create(vm_options_with_nones):
     for f in files_to_check:
         if not os.path.isfile(f):
             raise IOError(ENOENT, "Could not find file", f)
+
+    if "pinned_host" in vm_options:
+        _check_host(vm_options["pinned_host"])
+    if "preferred_host" in vm_options:
+        _check_host(vm_options["preferred_host"])
 
     if "pinned_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["pinned_host"]
@@ -730,6 +757,12 @@ def enable_vm(vm_name, nostart=False):
                 if type(custom_utilization) is not dict:
                     raise ValueError("Custom utilization must be a dictionary")
 
+            # Metadata comes from the shared image: validate it again before
+            # it is handed to the root-run placement helpers.
+            if pinned_host is not None:
+                _check_host(pinned_host)
+            if preferred_host is not None:
+                _check_host(preferred_host)
             if pinned_host and not Pacemaker.is_valid_host(pinned_host):
                 raise Exception(f"{pinned_host} is not valid hypervisor")
             if preferred_host and not Pacemaker.is_valid_host(preferred_host):
@@ -968,6 +1001,12 @@ def clone(vm_options_with_nones):
                 )
             except KeyError:
                 pass
+    # Values inherited above come from the source image metadata, so they
+    # are validated exactly like explicit ones before being used or stored.
+    for host_option in ("pinned_host", "preferred_host"):
+        if host_option in vm_options:
+            _check_host(vm_options[host_option])
+
     if "pinned_host" in vm_options and not Pacemaker.is_valid_host(
         vm_options["pinned_host"]
     ):
@@ -1452,6 +1491,7 @@ def console(vm_name, ssh_user="libvirtadmin"):
 
     :param vm_name: the VM name to open the console
     """
+    _check_name(vm_name)
     # First we need to get the hypervisor where the VM is running
     host = Pacemaker.find_resource(vm_name)
     if not host:

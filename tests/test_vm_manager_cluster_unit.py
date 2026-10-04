@@ -418,6 +418,7 @@ class Collaborators:
         self.disabled = []
         self.enabled_state = False
         self.resource_host = None
+        self.find_calls = []
         self.subprocess = FakeSubprocess()
 
     @property
@@ -516,6 +517,7 @@ def cluster(monkeypatch, tmp_path, rbd, libvirt_domains):
 
         @staticmethod
         def find_resource(vm_name):
+            collaborators.find_calls.append(vm_name)
             return collaborators.resource_host
 
     monkeypatch.setattr(vmc, "Pacemaker", PacemakerStub)
@@ -647,6 +649,53 @@ def create_options(disk_file):
         return values
 
     return build
+
+
+class TestCheckHost:
+    """The strict host pattern enforced before persistence and re-read."""
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "hyp1",
+            "hyp-1",
+            "hyp.1",
+            "hyp_1",
+            "1",
+            "HOST.example.com",
+            "a",
+        ],
+    )
+    def test_valid_hosts_are_accepted(self, host):
+        assert vmc._check_host(host) is None
+
+    @pytest.mark.parametrize(
+        "host",
+        [
+            "",
+            "-hyp",
+            ".hyp",
+            "_hyp",
+            "hyp 1",
+            "hyp;id",
+            "hyp$(id)",
+            "hyp`id`",
+            "hyp\nid",
+            "hyp1\n",
+            "hyp/1",
+            "hyp:1",
+            "hyp|id",
+            "hyp&id",
+        ],
+    )
+    def test_invalid_hosts_are_rejected(self, host):
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc._check_host(host)
+
+    @pytest.mark.parametrize("host", [None, 1, ["hyp1"]])
+    def test_non_string_hosts_are_rejected(self, host):
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc._check_host(host)
 
 
 class TestCloneValidation:
@@ -782,6 +831,29 @@ class TestCloneHosts:
         with pytest.raises(ValueError, match="not valid hypervisor"):
             vmc.clone(vm_options)
 
+    @pytest.mark.parametrize("option", ["pinned_host", "preferred_host"])
+    def test_malicious_explicit_host_is_rejected_before_any_rbd_write(
+        self, cluster, option
+    ):
+        vm_options = options(base_xml=BASE_XML, **{option: "hyp1$(id)"})
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc.clone(vm_options)
+        assert "set_image_metadata" not in cluster.rbd.call_names
+        assert cluster.configured == []
+
+    @pytest.mark.parametrize(
+        "metadata_key",
+        ["_pinned_host", "_preferred_host"],
+    )
+    def test_malicious_inherited_host_is_rejected_before_any_rbd_write(
+        self, cluster, metadata_key
+    ):
+        cluster.rbd.metadata[SRC_DISK][metadata_key] = "hyp1`id`"
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc.clone(options(base_xml=BASE_XML))
+        assert "set_image_metadata" not in cluster.rbd.call_names
+        assert cluster.configured == []
+
 
 class TestClonePacemakerOptions:
     """How the crm settings of the source reach the clone."""
@@ -910,18 +982,18 @@ class TestCloneDestinationMetadata:
     """What the clone must not keep from its source."""
 
     @pytest.mark.parametrize(
-        "key",
+        "key,value",
         [
-            "_preferred_host",
-            "_pinned_host",
-            "_pacemaker_meta",
-            "_pacemaker_params",
-            "_pacemaker_utilization",
+            ("_preferred_host", "hyp1"),
+            ("_pinned_host", "hyp1"),
+            ("_pacemaker_meta", json.dumps({"host": "hyp1"})),
+            ("_pacemaker_params", json.dumps({"host": "hyp1"})),
+            ("_pacemaker_utilization", json.dumps({"host": "hyp1"})),
         ],
     )
-    def test_source_placement_metadata_is_stripped(self, cluster, key):
-        cluster.rbd.metadata[SRC_DISK][key] = json.dumps({"host": "hyp1"})
-        cluster.valid_hosts.add(json.dumps({"host": "hyp1"}))
+    def test_source_placement_metadata_is_stripped(self, cluster, key, value):
+        cluster.rbd.metadata[SRC_DISK][key] = value
+        cluster.valid_hosts.add(value)
         vmc.clone(options(base_xml=BASE_XML))
         assert ("remove_image_metadata", DST_DISK, key) in cluster.rbd.calls
 
@@ -1112,6 +1184,16 @@ class TestCreateValidation:
         vm_options = create_options(preferred_host="nowhere")
         with pytest.raises(Exception, match="not a valid hypervisor"):
             vmc.create(vm_options)
+
+    @pytest.mark.parametrize("option", ["pinned_host", "preferred_host"])
+    def test_malicious_host_is_rejected_before_any_rbd_write(
+        self, cluster, create_options, option
+    ):
+        vm_options = create_options(**{option: "hyp1; touch /tmp/pwned"})
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc.create(vm_options)
+        assert cluster.rbd.calls == []
+        assert cluster.configured == []
 
     def test_valid_hosts_are_accepted(self, cluster, create_options):
         vmc.create(create_options(pinned_host="hyp1", preferred_host="hyp2"))
@@ -1486,6 +1568,15 @@ class TestConfigureVmMetadata:
         assert stored["_pinned_host"] == "hyp1"
         assert "_preferred_host" not in stored
 
+    @pytest.mark.parametrize("option", ["pinned_host", "preferred_host"])
+    def test_malicious_host_is_rejected_before_any_rbd_write(
+        self, real_configure_vm, option
+    ):
+        vm_options = configure_options(**{option: "hyp1; touch /tmp/pwned"})
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc._configure_vm(vm_options)
+        assert "set_image_metadata" not in real_configure_vm.rbd.call_names
+
     def test_crm_commands_are_stored_as_one_string(self, real_configure_vm):
         stored = self._metadata(
             real_configure_vm, crm_config_cmd=["cmd one", "cmd two"]
@@ -1634,6 +1725,20 @@ class TestEnableVmMetadata:
         real_enable_vm.rbd.metadata[DST_DISK] = {"_preferred_host": "nowhere"}
         with pytest.raises(Exception, match="not valid hypervisor"):
             vmc.enable_vm(DST)
+
+    @pytest.mark.parametrize(
+        "metadata_key",
+        ["_pinned_host", "_preferred_host"],
+    )
+    def test_malicious_stored_host_is_rejected_before_use(
+        self, real_enable_vm, metadata_key
+    ):
+        real_enable_vm.rbd.metadata[DST_DISK] = {
+            metadata_key: "hyp1; touch /tmp/pwned"
+        }
+        with pytest.raises(ValueError, match="Invalid host name"):
+            vmc.enable_vm(DST)
+        assert "add_vm" not in real_enable_vm.pacemaker.call_names
 
 
 class TestEnableVmCluster:
@@ -2438,6 +2543,7 @@ class TestConsole:
     def test_console_opens_on_the_running_host(self, cluster):
         cluster.resource_host = "hyp1"
         vmc.console(SRC)
+        assert cluster.find_calls == [SRC]
         assert ("console", SRC) in cluster.libvirt.calls
 
     def test_uri_targets_the_host_and_the_ssh_user(self, cluster):
@@ -2455,6 +2561,18 @@ class TestConsole:
             vmc.console(SRC)
         assert exit_info.value.code == 1
         assert "is not running on any hypervisor" in capsys.readouterr().err
+
+    def test_a_shell_metacharacter_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.console("x; id; #")
+        assert cluster.find_calls == []
+        assert cluster.libvirt.calls == []
+
+    def test_a_command_substitution_name_is_refused(self, cluster):
+        with pytest.raises(ValueError, match="special chars"):
+            vmc.console("$(id)")
+        assert cluster.find_calls == []
+        assert cluster.libvirt.calls == []
 
 
 class TestCreateXml:

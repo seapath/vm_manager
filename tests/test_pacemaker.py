@@ -38,18 +38,6 @@ class FakeCompletedProcess:
         self.returncode = returncode
 
 
-class FakePopen:
-    """What subprocess.Popen() gives back, for is_valid_host()."""
-
-    def __init__(self, returncode):
-        self.returncode = returncode
-        self.waited = False
-
-    def wait(self):
-        self.waited = True
-        return self.returncode
-
-
 class FakeSubprocess:
     """Recording stand-in for the subprocess module.
 
@@ -78,11 +66,6 @@ class FakeSubprocess:
                 "looping".format(len(self.calls), self.call_budget)
             )
         return FakeCompletedProcess(self.stdout, self.returncode)
-
-    def Popen(self, command, **kwargs):
-        self.calls.append(("Popen", command, kwargs))
-        self.popen = FakePopen(self.returncode)
-        return self.popen
 
     @property
     def commands(self):
@@ -429,50 +412,83 @@ class TestMeta:
 
 
 class TestIsValidHost:
-    """is_valid_host(): grep the host in "crm node server"."""
+    """is_valid_host(): match the host against "crm node server"."""
 
     def test_a_known_host(self, crm):
-        crm.returncode = 0
+        crm.stdout = b"hyp1\nhyp2\n"
         assert Pacemaker.is_valid_host("hyp1") is True
 
     def test_an_unknown_host(self, crm):
-        crm.returncode = 1
+        crm.stdout = b"hyp1\nhyp2\n"
         assert Pacemaker.is_valid_host("nowhere") is False
 
-    def test_the_host_is_anchored_in_the_grep(self, crm):
-        Pacemaker.is_valid_host("hyp1")
-        assert "^hyp1$" in crm.calls[0][1]
+    def test_the_match_is_exact(self, crm):
+        crm.stdout = b"hyp1\nhyp2\n"
+        assert Pacemaker.is_valid_host("hyp") is False
 
-    def test_the_process_is_waited_for(self, crm):
+    def test_the_command_is_an_argv_without_a_shell(self, crm):
         Pacemaker.is_valid_host("hyp1")
-        assert crm.popen.waited is True
+        assert crm.command == ["crm", "node", "server"]
+        assert crm.kwargs.get("shell") is None
+
+    @pytest.mark.parametrize(
+        "host",
+        ["$(id)", "x; id; #", "`id`", "hyp1 && id", "hyp1\nhyp2"],
+    )
+    def test_a_metacharacter_is_matched_as_a_literal(self, crm, host):
+        crm.stdout = b"hyp1\n"
+        assert Pacemaker.is_valid_host(host) is False
+        assert crm.command == ["crm", "node", "server"]
+        assert crm.kwargs.get("shell") is None
+        assert host not in crm.command
 
 
 class TestFindResource:
     """find_resource(): the node a resource runs on."""
 
     def test_the_host_is_returned(self, crm):
-        crm.stdout = b"hyp1\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         assert Pacemaker.find_resource(RESOURCE) == "hyp1"
 
     def test_a_resource_running_nowhere_gives_none(self, crm):
-        crm.stdout = b"\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE)).replace(
+            b"Started", b"Stopped"
+        )
         assert Pacemaker.find_resource(RESOURCE) is None
 
-    def test_the_resource_is_anchored_in_the_grep(self, crm):
+    def test_the_command_is_an_argv_without_a_shell(self, crm):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         Pacemaker.find_resource(RESOURCE)
-        assert r"^  \* vm1\b" in crm.command
+        assert crm.command == ["crm", "status"]
+        assert crm.kwargs.get("shell") is None
+
+    def test_a_longer_resource_name_is_not_matched(self, crm):
+        crm.stdout = status_output(
+            "  * vm1extra\t(ocf::seapath:VirtualDomain):\t" " Started hyp9",
+            RESOURCE_LINE.format(RESOURCE),
+        )
+        assert Pacemaker.find_resource(RESOURCE) == "hyp1"
 
     def test_the_lookup_is_logged(self, crm, caplog):
-        crm.stdout = b"hyp1\n"
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
         with caplog.at_level("DEBUG", logger=pacemaker.logger.name):
             Pacemaker.find_resource(RESOURCE)
         assert "found on hyp1" in caplog.text
 
     def test_a_miss_is_logged(self, crm, caplog):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE)).replace(
+            b"Started", b"Stopped"
+        )
         with caplog.at_level("DEBUG", logger=pacemaker.logger.name):
             Pacemaker.find_resource(RESOURCE)
         assert "not found" in caplog.text
+
+    @pytest.mark.parametrize("resource", ["$(id)", "x; id; #", "vm1 && id"])
+    def test_a_metacharacter_is_not_executed(self, crm, resource):
+        crm.stdout = status_output(RESOURCE_LINE.format(RESOURCE))
+        assert Pacemaker.find_resource(resource) is None
+        assert crm.command == ["crm", "status"]
+        assert crm.kwargs.get("shell") is None
 
 
 class TestAddVm:

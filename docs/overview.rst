@@ -21,8 +21,10 @@ Entry points
 
 - ``vm_manager_cmd`` — main CLI exposing all VM operations as subcommands
 - ``libvirt_cmd`` — lower-level CLI for direct libvirt operations
-- ``vm_manager_api`` — Flask REST API (``/``, ``/status/<guest>``,
-  ``/stop/<guest>``, ``/start/<guest>``)
+- ``vm_manager_api`` — Flask REST API (``GET /``, ``GET /status/<guest>``,
+  ``POST /stop/<guest>``, ``POST /start/<guest>``). The state-changing
+  routes are POST-only and the API must stay behind the authenticated,
+  TLS-terminating nginx.
 
 Architecture
 ------------

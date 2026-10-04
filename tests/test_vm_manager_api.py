@@ -12,6 +12,10 @@ seapath/ansible serves `app` with gunicorn on a unix socket, behind an
 nginx that carries the TLS, the authentication and the ACL. main() is a
 debug entry point, and since the application authenticates nobody on its
 own, the address it binds to is worth pinning down in a test.
+
+The state-changing routes are POST-only, so a cross-site GET cannot stop
+or start a VM; the tests assert both the 405 and that the backend is not
+reached on a GET.
 """
 
 import pytest
@@ -61,20 +65,54 @@ def test_stop(client, monkeypatch):
         vm_manager_api.v, "stop", lambda guest: f"{guest} stopped"
     )
 
-    response = client.get("/stop/guest0")
+    response = client.post("/stop/guest0")
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "guest0 stopped"
+
+
+def test_stop_rejects_get(client, monkeypatch):
+    """A GET must not be able to stop a VM."""
+
+    def unexpected(guest):
+        raise AssertionError("the backend must not run on a GET")
+
+    monkeypatch.setattr(vm_manager_api.v, "stop", unexpected)
+
+    response = client.get("/stop/guest0")
+
+    assert response.status_code == 405
+    assert set(response.headers["Allow"].split(", ")) == {
+        "OPTIONS",
+        "POST",
+    }
 
 
 def test_start_reports_a_silent_success(client, monkeypatch):
     """A backend returning nothing is a success, not an empty answer."""
     monkeypatch.setattr(vm_manager_api.v, "start", lambda guest: None)
 
-    response = client.get("/start/guest0")
+    response = client.post("/start/guest0")
 
     assert response.status_code == 200
     assert "should be OK" in response.get_data(as_text=True)
+
+
+def test_start_rejects_get(client, monkeypatch):
+    """A GET must not be able to start a VM."""
+
+    def unexpected(guest):
+        raise AssertionError("the backend must not run on a GET")
+
+    monkeypatch.setattr(vm_manager_api.v, "start", unexpected)
+
+    response = client.get("/start/guest0")
+
+    assert response.status_code == 405
+    assert set(response.headers["Allow"].split(", ")) == {
+        "OPTIONS",
+        "POST",
+    }
 
 
 def test_start_reports_the_backend_error(client, monkeypatch):
@@ -83,7 +121,7 @@ def test_start_reports_the_backend_error(client, monkeypatch):
 
     monkeypatch.setattr(vm_manager_api.v, "start", raise_error)
 
-    response = client.get("/start/guest0")
+    response = client.post("/start/guest0")
 
     assert response.status_code == 500
     assert (

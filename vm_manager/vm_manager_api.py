@@ -2,13 +2,28 @@
 # Copyright (C) 2021, RTE (http://www.rte-france.com)
 # SPDX-License-Identifier: Apache-2.0
 
+"""Flask REST API for the vm_manager backends.
+
+Routes are thin wrappers around the public ``vm_manager`` functions.
+
+This application authenticates nobody and has no CSRF token flow. In
+production it is imported by the wsgi.py of the vmmgrapi Ansible role,
+served by gunicorn on a unix socket, and only reachable through an nginx
+that terminates TLS and enforces the basic auth and the ACL. It must
+never be published directly.
+
+The state-changing routes are POST-only on purpose: a browser can issue
+a cross-site GET without any preflight, so a GET-triggered ``/stop`` or
+``/start`` would be a CSRF hole as soon as the API is reachable. POST
+alone does not close that hole, since a cross-site form can still POST
+blind; the authenticated nginx is what actually gates these calls.
+Read-only routes stay on GET.
+"""
+
 from flask import Flask
-from flask_wtf.csrf import CSRFProtect
 import vm_manager as v
 
 app = Flask(__name__)
-csrf = CSRFProtect()
-csrf.init_app(app)
 
 
 def execfunc(func, guest):
@@ -23,22 +38,30 @@ def execfunc(func, guest):
 
 @app.route("/")
 def list_vms():
+    """List the managed VMs. Read-only, so it stays on GET."""
     return v.list_vms()
 
 
 @app.route("/status/<guest>")
 def status_vm(guest):
+    """Return the status of ``guest``. Read-only, so it stays on GET."""
     return v.status(guest)
 
 
-@app.route("/stop/<guest>")
+@app.route("/stop/<guest>", methods=["POST"])
 def stop_vm(guest):
+    """Stop ``guest``.
+
+    POST-only: stopping a VM changes state, and a GET would let any
+    cross-site request trigger it once the API is reachable.
+    """
     out = execfunc(v.stop, guest)
     return out
 
 
-@app.route("/start/<guest>")
+@app.route("/start/<guest>", methods=["POST"])
 def start_vm(guest):
+    """Start ``guest``. POST-only, for the same reason as :func:`stop_vm`."""
     out = execfunc(v.start, guest)
     return out
 

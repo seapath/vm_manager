@@ -185,10 +185,10 @@ class LibVirtManager:
         :param domain: the domain whose the configuration is exported
         :param xml_path: the path where the XML configuration will be exported
         """
-        subprocess.run(
-            "/usr/bin/virsh -c 'qemu:///system' dumpxml {} > {}".format(
-                domain, xml_path
-            ),
+        result = subprocess.run(
+            ["/usr/bin/virsh", "-c", "qemu:///system", "dumpxml", domain],
             check=True,
-            shell=True,
+            stdout=subprocess.PIPE,
         )
+        with open(xml_path, "wb") as xml_file:
+            xml_file.write(result.stdout)
