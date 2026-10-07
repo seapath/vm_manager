@@ -1,4 +1,5 @@
 [![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=seapath_vm_manager&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=seapath_vm_manager)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=seapath_vm_manager&metric=coverage)](https://sonarcloud.io/component_measures?id=seapath_vm_manager&metric=coverage&view=list)
 
 # VM Manager
 
