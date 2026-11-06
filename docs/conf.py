@@ -22,7 +22,6 @@ autodoc_mock_imports = [
     "rados",
     "rbd",
     "flask",
-    "flask_wtf",
 ]
 
 html_theme = "alabaster"

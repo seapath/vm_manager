@@ -22,8 +22,9 @@ Entry points
 - ``vm_manager_cmd`` — main CLI exposing all VM operations as subcommands
 - ``libvirt_cmd`` — lower-level CLI for direct libvirt operations
 - ``vm_manager_api`` — Flask REST API (``GET /``, ``GET /status/<guest>``,
-  ``GET /stop/<guest>``, ``GET /start/<guest>``). Cross-site requests to
-  the state-changing routes are refused, and the API must stay behind the
+  ``GET /stop/<guest>``, ``GET /start/<guest>``). Cross-site requests
+  to the state-changing routes are refused when the browser identifies
+  them (see below), and the API must stay behind the
   authenticated, TLS-terminating nginx.
 
 REST API security
@@ -40,10 +41,16 @@ without these headers, such as ``curl`` or scripts, are accepted.
 
 No web server configuration change is required: the protection lives in
 ``vm_manager_api`` and works with the existing nginx setup, as long as
-nginx forwards the ``Host``, ``Origin`` and ``Sec-Fetch-Site`` headers
-unchanged (the default for ``proxy_pass``/gunicorn setups). The
-``Host`` header must be the one the browser used, otherwise same-origin
-requests carrying an ``Origin`` header are refused.
+nginx forwards the ``Origin`` and ``Sec-Fetch-Site`` headers unchanged
+(the default) and the ``Host`` header as sent by the browser. nginx's
+default is ``Host $proxy_host``, so this requires
+``proxy_set_header Host $http_host;`` (set by the vmmgrapi role).
+Otherwise same-origin requests carrying an ``Origin`` header are refused.
+
+Limits: the check relies on headers sent by the browser. Browsers without
+Fetch Metadata support (Safari < 16.4, Firefox < 90) send neither header
+on a cross-site ``<img>`` GET, so such a request is not refused. Clients
+sending neither header are always accepted.
 
 Architecture
 ------------
