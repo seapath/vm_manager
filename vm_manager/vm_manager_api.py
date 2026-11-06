@@ -32,7 +32,7 @@ STATE_CHANGING_ENDPOINTS = ("stop_vm", "start_vm")
 
 
 @app.before_request
-def reject_cross_site_posts():
+def reject_cross_site_requests():
     """Refuse state-changing requests that a browser sends cross-site."""
     if request.endpoint not in STATE_CHANGING_ENDPOINTS:
         return None

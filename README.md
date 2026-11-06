@@ -16,12 +16,12 @@ To run vm_manager on your machine for development, the following packages must b
 
 On Debian
 ```
-sudo apt-get install python3 python3-libvirt python-rbd python3-flaskext.wtf
+sudo apt-get install python3 python3-libvirt python-rbd python3-flask
 ```
 
 On Fedora/RHEL
 ```
-sudo dnf install python3 python3-libvirt python3-rbd python3-flask-wtf
+sudo dnf install python3 python3-libvirt python3-rbd python3-flask
 ```
 
 All theses dependencies are satisfied on a SEAPATH machine.

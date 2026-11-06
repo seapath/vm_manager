@@ -12,7 +12,6 @@ authors = [
 	{name = "Mathieu Dupré", email = "mathieu.dupre@savoirfairelinux.com"},
 ]
 dependencies = [
-    "Flask-WTF",
     "flask",
     "libvirt-python",
 ]
