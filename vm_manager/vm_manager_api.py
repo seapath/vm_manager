@@ -17,8 +17,10 @@ change, so the state-changing routes stay on GET. A browser can issue a
 cross-site GET or form POST without any preflight, and may attach cached
 basic auth credentials, so a before_request hook rejects cross-site
 requests to those routes, using the Fetch-Metadata ``Sec-Fetch-Site``
-header and the ``Origin`` header. Clients that send neither (curl,
-scripts) are not browsers and are allowed through.
+header and the ``Origin`` header. Requests carrying neither header are
+allowed through: non-browser clients (curl, scripts), but also cross-site
+``<img>`` GETs from browsers without Fetch Metadata (Safari < 16.4,
+Firefox < 90), see docs/overview.rst.
 """
 
 from urllib.parse import urlsplit
@@ -69,14 +71,20 @@ def status_vm(guest):
 
 @app.route("/stop/<guest>")
 def stop_vm(guest):
-    """Stop ``guest``. Cross-site requests are refused by the hook."""
+    """Stop ``guest``.
+
+    Cross-site requests identified by the browser are refused by the hook.
+    """
     out = execfunc(v.stop, guest)
     return out
 
 
 @app.route("/start/<guest>")
 def start_vm(guest):
-    """Start ``guest``. Cross-site requests are refused by the hook."""
+    """Start ``guest``.
+
+    Cross-site requests identified by the browser are refused by the hook.
+    """
     out = execfunc(v.start, guest)
     return out
 
