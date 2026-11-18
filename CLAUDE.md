@@ -45,11 +45,21 @@ cqfd -b check           # pylint
 Project `seapath_vm_manager` in the `seapath` organisation, public:
 https://sonarcloud.io/summary/overall?id=seapath_vm_manager
 
-The analysis runs from the `test` job of `.github/workflows/ci.yml`, after
-the tests, so that `coverage.xml` exists and can be imported. Scope and
-report paths are in `sonar-project.properties`. Two things are easy to get
-wrong here:
+The analysis runs from `.github/workflows/sonar.yml`, which is triggered by
+`workflow_run` once `ci.yml` completes. Scope and report paths are in
+`sonar-project.properties`. The split exists because GitHub withholds
+`SONAR_TOKEN` from the `pull_request` event for forks: `ci.yml` runs the
+tests unprivileged and uploads `coverage.xml` plus the PR number as the
+`sonar-input` artifact, then `sonar.yml` analyses with the secret. Things
+that are easy to get wrong:
 
+- **`sonar.yml` is privileged: it must never run code from the PR.** No
+  `pip install`, no `pytest`, no script from the checkout. The fork is only
+  checked out for the scanner to read, the artifact is validated, Python
+  runs with `-I`, and `sonar-project.properties` is taken from `main` so a
+  PR cannot redirect the analysis.
+- **`workflow_run` workflows only run from the default branch.** A change
+  to `sonar.yml` cannot be tested from its own PR.
 - **Automatic Analysis must stay disabled** in the project settings.
   SonarCloud refuses a CI analysis while it is on, and Automatic Analysis
   can never report coverage because it does not run the tests. The project
@@ -59,8 +69,8 @@ wrong here:
   touches counts as new code and pre-existing issues fail the new-code
   quality gate.
 
-Analysis needs the `SONAR_TOKEN` repository secret. The step is skipped
-when it is absent, which is what happens for pull requests from forks.
+Analysis needs the `SONAR_TOKEN` repository secret. The steps are skipped
+when it is absent.
 
 ## Documentation
 

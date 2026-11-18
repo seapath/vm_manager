@@ -29,15 +29,10 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
-    env:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # SonarCloud needs the full history to blame each line. Without
-          # it, every line of a file the pull request touches counts as new
-          # code, which drags pre-existing issues into the quality gate.
-          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -99,36 +94,27 @@ jobs:
             htmlcov/
           if-no-files-found: ignore
 
-      - name: Read the project version
-        id: version
-        # The SonarCloud project compares against the previous version to
-        # decide what counts as new code. Every analysis so far ran without
-        # a version, so there was no boundary and the period fell back to
-        # the first analysis ever: the whole code base counted as new, and
-        # publishing coverage turned the main branch gate red on 2000 lines
-        # of pre-existing code. Feeding the scanner the version from
-        # pyproject.toml, the single source of truth, gives the period a
-        # real boundary at each release.
-        run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import pathlib
-          import tomllib
-
-          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-          print("version=" + pyproject["project"]["version"])
-          PY
-
-      # Automatic Analysis must stay off in the SonarCloud project
-      # settings, otherwise SonarCloud rejects this analysis. Skipped when
-      # SONAR_TOKEN is unavailable, which is the case for pull requests
-      # opened from a fork.
-      - name: SonarCloud analysis
-        if: env.SONAR_TOKEN != ''
-        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+      - name: Record the pull request for the SonarCloud workflow
+        # sonar.yml runs after this workflow, in a privileged context, and
+        # cannot see this event. workflow_run.pull_requests is empty for
+        # pull requests opened from a fork, so the number travels in an
+        # artifact. Everything in the artifact is untrusted and sonar.yml
+        # validates it.
+        if: always()
         env:
-          SONAR_HOST_URL: https://sonarcloud.io
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          mkdir -p sonar-input
+          echo "$PR_NUMBER" > sonar-input/pr_number
+          cp coverage.xml sonar-input/ || true
+
+      - name: Upload the SonarCloud input
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          args: -Dsonar.projectVersion=${{ steps.version.outputs.version }}
+          name: sonar-input
+          path: sonar-input/
+          if-no-files-found: error
 
       - name: Install documentation dependencies
         # Editable too, so this step adds the docs extra instead of

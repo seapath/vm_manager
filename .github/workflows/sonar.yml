@@ -1,0 +1,122 @@
+name: SonarCloud
+
+# Runs after CI, in the context of the base repository, so that
+# SONAR_TOKEN is available even when CI ran for a pull request opened from
+# a fork (GitHub withholds secrets from the pull_request event in that
+# case).
+#
+# This workflow is privileged. It must never execute anything that comes
+# from the pull request: no pip install, no pytest, no script from the
+# checkout. The tests already ran, unprivileged, in ci.yml. Here the fork
+# is only checked out so the scanner can read it, and the artifact is
+# treated as untrusted input.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  sonar:
+    # Analyse even when the tests failed: the artifact is uploaded either
+    # way, and the quality gate should still report on the change.
+    if: github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      HEAD_REPO: ${{ github.event.workflow_run.head_repository.full_name }}
+      HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      RUN_EVENT: ${{ github.event.workflow_run.event }}
+    steps:
+      - name: Check out the analysed commit
+        if: env.SONAR_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.workflow_run.head_repository.full_name }}
+          ref: ${{ github.event.workflow_run.head_sha }}
+          # Blame data: without full history every line of a touched file
+          # counts as new code.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch the base branch
+        if: env.SONAR_TOKEN != ''
+        # The scanner needs the base branch to compute what a pull request
+        # changes, and a fork checkout does not have it. The properties
+        # file is also taken from there, so a pull request cannot change
+        # what gets analysed or where the result is sent.
+        run: |
+          git fetch --no-tags \
+            "https://github.com/${GITHUB_REPOSITORY}.git" \
+            main:refs/remotes/origin/main
+          git show origin/main:sonar-project.properties \
+            > sonar-project.properties
+
+      - name: Download the CI artifact
+        if: env.SONAR_TOKEN != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: sonar-input
+          path: ${{ runner.temp }}/sonar-input
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Read the artifact and the project version
+        if: env.SONAR_TOKEN != ''
+        id: ctx
+        env:
+          INPUT_DIR: ${{ runner.temp }}/sonar-input
+        run: |
+          python3 -I - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import pathlib
+          import re
+          import shutil
+          import tomllib
+
+          src = pathlib.Path(os.environ["INPUT_DIR"])
+          if os.environ["RUN_EVENT"] == "pull_request":
+              number = (src / "pr_number").read_text().strip()
+              # Untrusted: the fork wrote this file.
+              if not re.fullmatch(r"[0-9]{1,9}", number):
+                  raise SystemExit("invalid pull request number")
+              print("pr=" + number)
+          coverage = src / "coverage.xml"
+          if coverage.is_file():
+              shutil.copy(coverage, "coverage.xml")
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          print("version=" + pyproject["project"]["version"])
+          PY
+
+      - name: Pick the analysis arguments
+        if: env.SONAR_TOKEN != ''
+        id: args
+        env:
+          PR: ${{ steps.ctx.outputs.pr }}
+          VERSION: ${{ steps.ctx.outputs.version }}
+        run: |
+          {
+            echo "args<<EOF"
+            echo "-Dsonar.projectVersion=${VERSION}"
+            echo "-Dsonar.scm.revision=${HEAD_SHA}"
+            if [ "$RUN_EVENT" = "pull_request" ]; then
+              echo "-Dsonar.pullrequest.key=${PR}"
+              echo "-Dsonar.pullrequest.branch=${HEAD_BRANCH}"
+              echo "-Dsonar.pullrequest.base=main"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Automatic Analysis must stay off in the SonarCloud project
+      # settings, otherwise SonarCloud rejects this analysis.
+      - name: SonarCloud analysis
+        if: env.SONAR_TOKEN != ''
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        env:
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: ${{ steps.args.outputs.args }}
