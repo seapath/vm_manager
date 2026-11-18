@@ -42,6 +42,7 @@ jobs:
           # counts as new code.
           fetch-depth: 0
           persist-credentials: false
+          allow-unsafe-pr-checkout: true
 
       - name: Fetch the base branch
         if: env.SONAR_TOKEN != ''
