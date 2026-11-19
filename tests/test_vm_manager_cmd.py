@@ -46,6 +46,7 @@ API_RESULTS = {
     "disable_vm": None,
     "enable_vm": None,
     "get_metadata": "some-value",
+    "get_seapath_alloc": "version: 1",
     "list_metadata": ["key1", "key2"],
     "list_snapshots": ["snap1", "snap2"],
     "list_vms": ["vm1", "vm2"],
@@ -55,6 +56,7 @@ API_RESULTS = {
     "remove_snapshot": None,
     "rollback_snapshot": None,
     "set_metadata": None,
+    "set_seapath_alloc": None,
     "start": None,
     "status": "Running",
     "stop": None,
@@ -80,6 +82,7 @@ MINIMAL_ARGV = {
     "disable": ["disable", "-n", "vm1"],
     "enable": ["enable", "-n", "vm1"],
     "get_metadata": ["get_metadata", "-n", "vm1", "--metadata_name", "k"],
+    "get-seapath-alloc": ["get-seapath-alloc", "-n", "vm1"],
     "list": ["list"],
     "list_metadata": ["list_metadata", "-n", "vm1"],
     "list_snapshots": ["list_snapshots", "-n", "vm1"],
@@ -97,6 +100,7 @@ MINIMAL_ARGV = {
         "--metadata_value",
         "v",
     ],
+    "set-seapath-alloc": ["set-seapath-alloc", "-n", "vm1", "p.yaml"],
     "start": ["start", "-n", "vm1"],
     "status": ["status", "-n", "vm1"],
     "stop": ["stop", "-n", "vm1"],
@@ -684,3 +688,65 @@ class TestMainAddToCluster:
         run_cli("add-to-cluster", "-n", "vm1", "--new-name", "vm2")
         _, args, _ = api.only
         assert args[0]["new_name"] == "vm2"
+
+
+@pytest.fixture
+def profile_file(tmp_path):
+    """Write a seapath-alloc profile and return its path."""
+    path = tmp_path / "profile.yaml"
+    path.write_text("version: 1\n")
+    return str(path)
+
+
+class TestMainSeapathAlloc:
+    """The seapath-alloc profile: read from a file, forwarded, printed."""
+
+    def test_create_reads_the_profile_file(
+        self, run_cli, api, xml_file, profile_file
+    ):
+        run_cli(
+            "create",
+            "-n",
+            "vm1",
+            "--xml",
+            xml_file,
+            "-i",
+            "d.qcow2",
+            "--seapath-alloc",
+            profile_file,
+        )
+        _, args, _ = api.only
+        assert args[0]["seapath_alloc"] == "version: 1\n"
+
+    def test_create_without_a_profile(self, run_cli, api, xml_file):
+        run_cli("create", "-n", "vm1", "--xml", xml_file, "-i", "d.qcow2")
+        _, args, _ = api.only
+        assert args[0]["seapath_alloc"] is None
+
+    def test_clone_reads_the_profile_file(self, run_cli, api, profile_file):
+        run_cli(
+            "clone",
+            "-n",
+            "vm1",
+            "--dst_name",
+            "vm2",
+            "--seapath-alloc",
+            profile_file,
+        )
+        _, args, _ = api.only
+        assert args[0]["seapath_alloc"] == "version: 1\n"
+
+    def test_set_reads_the_profile_file(self, run_cli, api, profile_file):
+        run_cli("set-seapath-alloc", "-n", "vm1", profile_file)
+        assert api.only == ("set_seapath_alloc", ("vm1", "version: 1\n"), {})
+
+    def test_get_prints_the_profile(self, run_cli, api, capsys):
+        run_cli("get-seapath-alloc", "-n", "vm1")
+        assert capsys.readouterr().out == "version: 1\n"
+
+    def test_get_of_a_vm_without_a_profile_fails(
+        self, run_cli, api, monkeypatch
+    ):
+        monkeypatch.setattr(vm_manager, "get_seapath_alloc", lambda name: None)
+        with pytest.raises(SystemExit, match="vm1 has no seapath-alloc"):
+            run_cli("get-seapath-alloc", "-n", "vm1")
